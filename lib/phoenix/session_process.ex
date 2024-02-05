@@ -98,33 +98,28 @@ defmodule Phoenix.SessionProcess do
         GenServer.start_link(__MODULE__, %{}, name: name)
       end
 
-      @impl true
       def init(arg) do
         Process.flag(:trap_exit, true)
 
         {:ok, state}
       end
 
-      @impl true
       def handle_call(:get_state, _from, state) do
         {:reply, state, state}
       end
 
-      @impl true
       def handle_cast({:monitor, pid}, state) do
         state = state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
         Process.monitor(pid)
         {:noreply, state}
       end
 
-      @impl true
       def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
         state = state |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
 
         {:noreply, state}
       end
 
-      @impl true
       def terminate(reason, state) do
         state
         |> Map.get(:__live_view__, [])
