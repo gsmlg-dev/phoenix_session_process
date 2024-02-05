@@ -8,6 +8,9 @@ defmodule Phoenix.SessionProcess.MixProject do
       elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      description: description(),
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/gsmlg-dev/phoenix_session_process"},
       deps: deps()
     ]
   end
@@ -28,4 +31,10 @@ defmodule Phoenix.SessionProcess.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp description do
+    """
+    Tool for create process for each user session in Phoenix.
+    """
+  end
 end
