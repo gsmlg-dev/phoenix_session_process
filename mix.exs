@@ -9,8 +9,13 @@ defmodule Phoenix.SessionProcess.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       description: description(),
-      licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/gsmlg-dev/phoenix_session_process"},
+      source_url: "https://github.com/gsmlg-dev/phoenix_session_process",
+      package: [
+        files: ["lib", "mix.exs", "README*", "LICENSE*", "CHANGELOG*"],
+        maintainers: ["Jonathan Gao"],
+        licenses: ["MIT"],
+        links: %{"GitHub" => "https://github.com/gsmlg-dev/phoenix_session_process"}
+      ],
       deps: deps()
     ]
   end
