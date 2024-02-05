@@ -4,8 +4,8 @@ defmodule Phoenix.SessionProcess.MixProject do
   def project do
     [
       app: :phoenix_session_process,
-      version: "0.1.0",
-      elixir: "~> 1.16",
+      version: "0.2.0",
+      elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       description: description(),

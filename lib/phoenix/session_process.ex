@@ -43,6 +43,10 @@ defmodule Phoenix.SessionProcess do
   Genserver cast on a session process.
 
       Phoenix.SessionProcess.cast("session_id", request)
+
+  List all session processes.
+
+      Phoenix.SessionProcess.list_session()
   """
 
   @spec start(binary()) :: :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
@@ -65,6 +69,10 @@ defmodule Phoenix.SessionProcess do
   @spec cast(binary(), any()) :: :ok
   defdelegate cast(session_id, request), to: Phoenix.SessionProcess.ProcessSupervisor, as: :cast_on_session
 
+  @spec list_session() :: [{binary(), pid()}, ...]
+  def list_session() do
+    Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+  end
 
   defmacro __using__(:process) do
     quote do
@@ -75,6 +83,52 @@ defmodule Phoenix.SessionProcess do
       end
       def start_link(name: name) do
         GenServer.start_link(__MODULE__, %{}, name: name)
+      end
+    end
+  end
+
+  defmacro __using__(:process_link) do
+    quote do
+      use GenServer
+
+      def start_link(name: name, arg: arg) do
+        GenServer.start_link(__MODULE__, arg, name: name)
+      end
+      def start_link(name: name) do
+        GenServer.start_link(__MODULE__, %{}, name: name)
+      end
+
+      @impl true
+      def init(arg) do
+        Process.flag(:trap_exit, true)
+
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_call(:get_state, _from, state) do
+        {:reply, state, state}
+      end
+
+      @impl true
+      def handle_cast({:monitor, pid}, state) do
+        state = state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
+        Process.monitor(pid)
+        {:noreply, state}
+      end
+
+      @impl true
+      def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+        state = state |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
+
+        {:noreply, state}
+      end
+
+      @impl true
+      def terminate(reason, state) do
+        state
+        |> Map.get(:__live_view__, [])
+        |> Enum.each(&Process.send_after(&1, :session_expired, 0))
       end
     end
   end
