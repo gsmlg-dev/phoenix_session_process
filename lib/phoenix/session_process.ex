@@ -86,6 +86,7 @@ defmodule Phoenix.SessionProcess do
       end
 
       def get_session_id() do
+        current_pid = self()
         Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
         |> Enum.at(0)
         |> elem(0)
@@ -111,6 +112,7 @@ defmodule Phoenix.SessionProcess do
       end
 
       def get_session_id() do
+        current_pid = self()
         Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
         |> Enum.at(0)
         |> elem(0)
