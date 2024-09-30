@@ -84,6 +84,12 @@ defmodule Phoenix.SessionProcess do
       def start_link(name: name) do
         GenServer.start_link(__MODULE__, %{}, name: name)
       end
+
+      def get_session_id() do
+        Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
+        |> Enum.at(0)
+        |> elem(0)
+      end
     end
   end
 
@@ -102,6 +108,12 @@ defmodule Phoenix.SessionProcess do
         Process.flag(:trap_exit, true)
 
         {:ok, state}
+      end
+
+      def get_session_id() do
+        Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
+        |> Enum.at(0)
+        |> elem(0)
       end
 
       def handle_call(:get_state, _from, state) do
