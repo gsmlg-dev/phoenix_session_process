@@ -2,6 +2,8 @@
 
 Create a process for each session, all user requests would through this process.
 
+* [Github Repo](https://github.com/gsmlg-dev/phoenix_session_process)
+
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
@@ -10,7 +12,7 @@ by adding `phoenix_session_process` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_session_process, "~> 0.1.0"}
+    {:phoenix_session_process, "~> 0.3.0"}
   ]
 end
 ```
@@ -166,5 +168,11 @@ Genserver cast on a session process.
 
 ```elixir
     Phoenix.SessionProcess.cast("session_id", request)
+```
+
+Get session id in SessionProcess.
+
+```elixir
+    get_session_id()
 ```
 
