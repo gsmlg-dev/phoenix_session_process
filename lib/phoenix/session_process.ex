@@ -98,16 +98,16 @@ defmodule Phoenix.SessionProcess do
     quote do
       use GenServer
 
-      def start_link(name: name, arg: arg) do
-        GenServer.start_link(__MODULE__, arg, name: name)
+      def start_link(name: name, args: args) do
+        GenServer.start_link(__MODULE__, args, name: name)
       end
       def start_link(name: name) do
         GenServer.start_link(__MODULE__, %{}, name: name)
       end
 
-      def init(arg) do
+      def init(args) do
         Process.flag(:trap_exit, true)
-
+        state = args
         {:ok, state}
       end
 
