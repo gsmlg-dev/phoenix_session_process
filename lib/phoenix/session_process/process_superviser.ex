@@ -54,6 +54,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   @spec terminate_session(binary()) :: :ok | {:error, :not_found}
   def terminate_session(session_id) do
     Logger.debug("End Session: #{inspect(session_id)}")
+
     session_id
     |> session_process_pid()
     |> terminate_child()

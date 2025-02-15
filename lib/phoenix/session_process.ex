@@ -52,26 +52,41 @@ defmodule Phoenix.SessionProcess do
   @spec start(binary()) :: :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
   defdelegate start(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
   @spec start(binary(), atom()) :: :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
-  defdelegate start(session_id, module), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
+  defdelegate start(session_id, module),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :start_session
+
   @spec start(binary(), atom(), any()) ::
           :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
-  defdelegate start(session_id, module, arg), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
+  defdelegate start(session_id, module, arg),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :start_session
 
   @spec started?(binary()) :: boolean()
-  defdelegate started?(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :session_process_started?
+  defdelegate started?(session_id),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :session_process_started?
 
   @spec terminate(binary()) :: :ok | {:error, :not_found}
-  defdelegate terminate(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :terminate_session
+  defdelegate terminate(session_id),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :terminate_session
 
   @spec call(binary(), any(), :infinity | non_neg_integer()) :: any()
-  defdelegate call(session_id, request, timeout \\ 15_000), to: Phoenix.SessionProcess.ProcessSupervisor, as: :call_on_session
+  defdelegate call(session_id, request, timeout \\ 15_000),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :call_on_session
 
   @spec cast(binary(), any()) :: :ok
-  defdelegate cast(session_id, request), to: Phoenix.SessionProcess.ProcessSupervisor, as: :cast_on_session
+  defdelegate cast(session_id, request),
+    to: Phoenix.SessionProcess.ProcessSupervisor,
+    as: :cast_on_session
 
   @spec list_session() :: [{binary(), pid()}, ...]
   def list_session() do
-    Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+    Registry.select(Phoenix.SessionProcess.Registry, [
+      {{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}
+    ])
   end
 
   defmacro __using__(:process) do
@@ -81,13 +96,17 @@ defmodule Phoenix.SessionProcess do
       def start_link(name: name, arg: arg) do
         GenServer.start_link(__MODULE__, arg, name: name)
       end
+
       def start_link(name: name) do
         GenServer.start_link(__MODULE__, %{}, name: name)
       end
 
       def get_session_id() do
         current_pid = self()
-        Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
+
+        Registry.select(Phoenix.SessionProcess.Registry, [
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+        ])
         |> Enum.at(0)
         |> elem(0)
       end
@@ -101,6 +120,7 @@ defmodule Phoenix.SessionProcess do
       def start_link(name: name, args: args) do
         GenServer.start_link(__MODULE__, args, name: name)
       end
+
       def start_link(name: name) do
         GenServer.start_link(__MODULE__, %{}, name: name)
       end
@@ -113,7 +133,10 @@ defmodule Phoenix.SessionProcess do
 
       def get_session_id() do
         current_pid = self()
-        Registry.select(Phoenix.SessionProcess.Registry, [{{:"$1", :"$2", :_}, [{:"==", :"$2", current_pid}], [{{:"$1", :"$2"}}]}])
+
+        Registry.select(Phoenix.SessionProcess.Registry, [
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+        ])
         |> Enum.at(0)
         |> elem(0)
       end
@@ -129,7 +152,9 @@ defmodule Phoenix.SessionProcess do
       end
 
       def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-        state = state |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
+        state =
+          state
+          |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
 
         {:noreply, state}
       end
