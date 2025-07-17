@@ -28,19 +28,19 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   def start_session(session_id) do
     Logger.debug("Start Session: #{inspect(session_id)}")
     module = Application.get_env(:phoenix_session_process, :session_process)
-    spec = {module, name: child_name(session_id)}
+    spec = {module, [name: child_name(session_id)]}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 
   def start_session(session_id, module) do
     Logger.debug("Start Session: #{inspect(session_id)}")
-    spec = {module, name: child_name(session_id)}
+    spec = {module, [name: child_name(session_id)]}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 
   def start_session(session_id, module, arg) do
     Logger.debug("Start Session: #{inspect(session_id)}")
-    spec = {module, name: child_name(session_id), arg: arg}
+    spec = {module, [name: child_name(session_id), arg: arg]}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 

@@ -85,7 +85,7 @@ defmodule Phoenix.SessionProcess do
   @spec list_session() :: [{binary(), pid()}, ...]
   def list_session() do
     Registry.select(Phoenix.SessionProcess.Registry, [
-      {{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}
+      {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
     ])
   end
 
@@ -93,19 +93,17 @@ defmodule Phoenix.SessionProcess do
     quote do
       use GenServer
 
-      def start_link(name: name, arg: arg) do
+      def start_link(opts) do
+        arg = Keyword.get(opts, :arg, %{})
+        name = Keyword.get(opts, :name)
         GenServer.start_link(__MODULE__, arg, name: name)
-      end
-
-      def start_link(name: name) do
-        GenServer.start_link(__MODULE__, %{}, name: name)
       end
 
       def get_session_id() do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [
-          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
@@ -117,49 +115,39 @@ defmodule Phoenix.SessionProcess do
     quote do
       use GenServer
 
-      def start_link(name: name, args: args) do
+      def start_link(opts) do
+        args = Keyword.get(opts, :args, %{})
+        name = Keyword.get(opts, :name)
         GenServer.start_link(__MODULE__, args, name: name)
-      end
-
-      def start_link(name: name) do
-        GenServer.start_link(__MODULE__, %{}, name: name)
-      end
-
-      def init(args) do
-        Process.flag(:trap_exit, true)
-        state = args
-        {:ok, state}
       end
 
       def get_session_id() do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [
-          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
       end
 
-      def handle_call(:get_state, _from, state) do
-        {:reply, state, state}
-      end
-
       def handle_cast({:monitor, pid}, state) do
-        state = state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
+        new_state =
+          state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
+
         Process.monitor(pid)
-        {:noreply, state}
+        {:noreply, new_state}
       end
 
       def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-        state =
+        new_state =
           state
           |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
 
-        {:noreply, state}
+        {:noreply, new_state}
       end
 
-      def terminate(reason, state) do
+      def terminate(_reason, state) do
         state
         |> Map.get(:__live_view__, [])
         |> Enum.each(&Process.send_after(&1, :session_expired, 0))

@@ -5,16 +5,19 @@ defmodule TestProcess do
 
   @impl true
   def init(init_arg \\ %{}) do
-    {:ok, init_arg}
+    {:ok, agent} = Phoenix.SessionProcess.State.start_link(init_arg)
+    {:ok, %{agent: agent}}
   end
 
   @impl true
   def handle_call(:get_value, _from, state) do
-    {:reply, state, state}
+    {:reply, Phoenix.SessionProcess.State.get(state.agent, :value), state}
   end
 
   @impl true
   def handle_cast(:add_one, state) do
-    {:noreply, state + 1}
+    value = Phoenix.SessionProcess.State.get(state.agent, :value)
+    Phoenix.SessionProcess.State.put(state.agent, :value, value + 1)
+    {:noreply, state}
   end
 end
