@@ -91,9 +91,10 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   def terminate_session(session_id) do
     Logger.debug("End Session: #{inspect(session_id)}")
 
-    session_id
-    |> session_process_pid()
-    |> terminate_child()
+    case session_process_pid(session_id) do
+      nil -> {:error, :not_found}
+      pid -> terminate_child(pid)
+    end
   end
 
   def call_on_session(session_id, request, timeout \\ 15_000) do
