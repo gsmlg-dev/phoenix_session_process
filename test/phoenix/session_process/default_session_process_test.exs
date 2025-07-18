@@ -22,7 +22,8 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcessTest do
 
   test "handles put cast" do
     GenServer.cast(:test_session, {:put, :key, "value"})
-    Process.sleep(10) # Allow cast to process
+    # Allow cast to process
+    Process.sleep(10)
     assert %{key: "value"} = GenServer.call(:test_session, :get_state)
   end
 

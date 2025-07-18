@@ -9,12 +9,12 @@ defmodule Phoenix.SessionProcessTest do
     unless Process.whereis(Phoenix.SessionProcess.Supervisor) do
       {:ok, _pid} = Phoenix.SessionProcess.Supervisor.start_link([])
     end
-    
+
     # Clean up any existing session processes
     for {session_id, _pid} <- Phoenix.SessionProcess.list_session() do
       Phoenix.SessionProcess.terminate(session_id)
     end
-    
+
     :ok
   end
 

@@ -7,20 +7,20 @@ defmodule Phoenix.SessionProcess.ConfigTest do
     test "returns default session process when not configured" do
       original_value = Application.get_env(:phoenix_session_process, :session_process)
       Application.delete_env(:phoenix_session_process, :session_process)
-      
+
       on_exit(fn ->
         if original_value do
           Application.put_env(:phoenix_session_process, :session_process, original_value)
         end
       end)
-      
+
       assert Config.session_process() == Phoenix.SessionProcess.Config.DefaultSessionProcess
     end
 
     test "returns configured session process when set" do
       # Temporarily set config
       original_value = Application.get_env(:phoenix_session_process, :session_process)
-      
+
       on_exit(fn ->
         if original_value do
           Application.put_env(:phoenix_session_process, :session_process, original_value)
@@ -41,7 +41,7 @@ defmodule Phoenix.SessionProcess.ConfigTest do
 
     test "returns configured max sessions when set" do
       original_value = Application.get_env(:phoenix_session_process, :max_sessions)
-      
+
       on_exit(fn ->
         if original_value do
           Application.put_env(:phoenix_session_process, :max_sessions, original_value)
@@ -62,7 +62,7 @@ defmodule Phoenix.SessionProcess.ConfigTest do
 
     test "returns configured session TTL when set" do
       original_value = Application.get_env(:phoenix_session_process, :session_ttl)
-      
+
       on_exit(fn ->
         if original_value do
           Application.put_env(:phoenix_session_process, :session_ttl, original_value)
@@ -83,7 +83,7 @@ defmodule Phoenix.SessionProcess.ConfigTest do
 
     test "returns configured rate limit when set" do
       original_value = Application.get_env(:phoenix_session_process, :rate_limit)
-      
+
       on_exit(fn ->
         if original_value do
           Application.put_env(:phoenix_session_process, :rate_limit, original_value)

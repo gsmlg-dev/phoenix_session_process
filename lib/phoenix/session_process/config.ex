@@ -5,8 +5,10 @@ defmodule Phoenix.SessionProcess.Config do
 
   @default_session_process __MODULE__.DefaultSessionProcess
   @default_max_sessions 10_000
-  @default_session_ttl 3_600_000 # 1 hour in milliseconds
-  @default_rate_limit 100 # sessions per minute
+  # 1 hour in milliseconds
+  @default_session_ttl 3_600_000
+  # sessions per minute
+  @default_rate_limit 100
 
   @doc """
   Gets the configured session process module.

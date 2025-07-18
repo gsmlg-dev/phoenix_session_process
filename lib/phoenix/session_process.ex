@@ -51,7 +51,7 @@ defmodule Phoenix.SessionProcess do
 
   @spec start(binary()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
-  
+
   @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id, module),
     to: Phoenix.SessionProcess.ProcessSupervisor,

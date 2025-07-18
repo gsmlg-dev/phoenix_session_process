@@ -5,7 +5,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   use GenServer
   require Logger
 
-  @cleanup_interval 60_000 # 1 minute
+  # 1 minute
+  @cleanup_interval 60_000
 
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -30,6 +31,7 @@ defmodule Phoenix.SessionProcess.Cleanup do
       Logger.debug("Auto-cleanup expired session: #{session_id}")
       Phoenix.SessionProcess.terminate(session_id)
     end
+
     {:noreply, state}
   end
 

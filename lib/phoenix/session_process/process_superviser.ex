@@ -31,15 +31,18 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
       Logger.debug("Start Session: #{inspect(session_id)}")
       module = Phoenix.SessionProcess.Config.session_process()
       spec = {module, [name: child_name(session_id)]}
-      
+
       case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} -> 
+        {:ok, pid} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        {:ok, pid, _info} -> 
+
+        {:ok, pid, _info} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        other -> other
+
+        other ->
+          other
       end
     end
   end
@@ -49,15 +52,18 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
          :ok <- check_session_limits() do
       Logger.debug("Start Session: #{inspect(session_id)}")
       spec = {module, [name: child_name(session_id)]}
-      
+
       case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} -> 
+        {:ok, pid} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        {:ok, pid, _info} -> 
+
+        {:ok, pid, _info} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        other -> other
+
+        other ->
+          other
       end
     end
   end
@@ -67,15 +73,18 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
          :ok <- check_session_limits() do
       Logger.debug("Start Session: #{inspect(session_id)}")
       spec = {module, [name: child_name(session_id), arg: arg]}
-      
+
       case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} -> 
+        {:ok, pid} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        {:ok, pid, _info} -> 
+
+        {:ok, pid, _info} ->
           Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
           {:ok, pid}
-        other -> other
+
+        other ->
+          other
       end
     end
   end
@@ -135,7 +144,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   defp check_session_limits() do
     max_sessions = Phoenix.SessionProcess.Config.max_sessions()
     current_sessions = Registry.count(Phoenix.SessionProcess.Registry)
-    
+
     if current_sessions < max_sessions do
       :ok
     else

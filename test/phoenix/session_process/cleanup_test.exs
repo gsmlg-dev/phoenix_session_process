@@ -10,13 +10,13 @@ defmodule Phoenix.SessionProcess.CleanupTest do
 
   test "cancel_session_cleanup/1 cancels scheduled cleanup" do
     timer_ref = Process.send_after(self(), :test, 1000)
-    
+
     # Verify timer exists
     assert is_reference(timer_ref)
-    
+
     # Cancel the timer
     assert :ok = Cleanup.cancel_session_cleanup(timer_ref)
-    
+
     # Verify timer was cancelled
     refute Process.read_timer(timer_ref)
   end
