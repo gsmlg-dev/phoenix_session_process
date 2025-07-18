@@ -20,7 +20,7 @@ Add `phoenix_session_process` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_session_process, "~> 0.3.1"}
+    {:phoenix_session_process, "~> 0.4.0"}
   ]
 end
 ```
