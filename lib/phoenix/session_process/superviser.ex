@@ -12,7 +12,8 @@ defmodule Phoenix.SessionProcess.Supervisor do
   def init(_init_arg) do
     children = [
       {Registry, keys: :unique, name: Phoenix.SessionProcess.Registry},
-      {Phoenix.SessionProcess.ProcessSupervisor, []}
+      {Phoenix.SessionProcess.ProcessSupervisor, []},
+      {Phoenix.SessionProcess.Cleanup, []}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

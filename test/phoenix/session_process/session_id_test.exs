@@ -6,7 +6,8 @@ defmodule Phoenix.SessionProcess.SessionIdTest do
 
   test "test generate_unique_session_id" do
     session_id = SessionId.generate_unique_session_id()
-    assert session_id != :crypto.strong_rand_bytes(16) |> Base.encode16()
-    assert String.length(session_id) == 32
+    assert is_binary(session_id)
+    assert String.length(session_id) == 43
+    assert String.match?(session_id, ~r/^[A-Za-z0-9_-]+$/)
   end
 end

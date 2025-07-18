@@ -9,10 +9,10 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
     DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
   end
 
-  def start_child(workder, worker_arg) do
-    workder_spec = {workder, worker_arg}
-    Logger.debug("Start Child Worker: #{inspect(workder_spec)}")
-    DynamicSupervisor.start_child(__MODULE__, workder_spec)
+  def start_child(worker, worker_arg) do
+    worker_spec = {worker, worker_arg}
+    Logger.debug("Start Child Worker: #{inspect(worker_spec)}")
+    DynamicSupervisor.start_child(__MODULE__, worker_spec)
   end
 
   def terminate_child(pid) do
@@ -26,22 +26,58 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   def start_session(session_id) do
-    Logger.debug("Start Session: #{inspect(session_id)}")
-    module = Application.get_env(:phoenix_session_process, :session_process)
-    spec = {module, [name: child_name(session_id)]}
-    DynamicSupervisor.start_child(__MODULE__, spec)
+    with :ok <- validate_session_id(session_id),
+         :ok <- check_session_limits() do
+      Logger.debug("Start Session: #{inspect(session_id)}")
+      module = Phoenix.SessionProcess.Config.session_process()
+      spec = {module, [name: child_name(session_id)]}
+      
+      case DynamicSupervisor.start_child(__MODULE__, spec) do
+        {:ok, pid} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        {:ok, pid, _info} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        other -> other
+      end
+    end
   end
 
   def start_session(session_id, module) do
-    Logger.debug("Start Session: #{inspect(session_id)}")
-    spec = {module, [name: child_name(session_id)]}
-    DynamicSupervisor.start_child(__MODULE__, spec)
+    with :ok <- validate_session_id(session_id),
+         :ok <- check_session_limits() do
+      Logger.debug("Start Session: #{inspect(session_id)}")
+      spec = {module, [name: child_name(session_id)]}
+      
+      case DynamicSupervisor.start_child(__MODULE__, spec) do
+        {:ok, pid} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        {:ok, pid, _info} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        other -> other
+      end
+    end
   end
 
   def start_session(session_id, module, arg) do
-    Logger.debug("Start Session: #{inspect(session_id)}")
-    spec = {module, [name: child_name(session_id), arg: arg]}
-    DynamicSupervisor.start_child(__MODULE__, spec)
+    with :ok <- validate_session_id(session_id),
+         :ok <- check_session_limits() do
+      Logger.debug("Start Session: #{inspect(session_id)}")
+      spec = {module, [name: child_name(session_id), arg: arg]}
+      
+      case DynamicSupervisor.start_child(__MODULE__, spec) do
+        {:ok, pid} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        {:ok, pid, _info} -> 
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          {:ok, pid}
+        other -> other
+      end
+    end
   end
 
   @spec session_process_started?(binary()) :: boolean()
@@ -61,15 +97,17 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   def call_on_session(session_id, request, timeout \\ 15_000) do
-    session_id
-    |> session_process_pid()
-    |> GenServer.call(request, timeout)
+    case session_process_pid(session_id) do
+      nil -> {:error, :session_not_found}
+      pid -> GenServer.call(pid, request, timeout)
+    end
   end
 
   def cast_on_session(session_id, request) do
-    session_id
-    |> session_process_pid()
-    |> GenServer.cast(request)
+    case session_process_pid(session_id) do
+      nil -> {:error, :session_not_found}
+      pid -> GenServer.cast(pid, request)
+    end
   end
 
   @spec child_name(binary()) :: {:via, Registry, {Phoenix.SessionProcess.Registry, binary()}}
@@ -82,6 +120,25 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
     case {Phoenix.SessionProcess.Registry, session_id} |> Registry.whereis_name() do
       :undefined -> nil
       pid -> pid
+    end
+  end
+
+  defp validate_session_id(session_id) do
+    if Phoenix.SessionProcess.Config.valid_session_id?(session_id) do
+      :ok
+    else
+      {:error, :invalid_session_id}
+    end
+  end
+
+  defp check_session_limits() do
+    max_sessions = Phoenix.SessionProcess.Config.max_sessions()
+    current_sessions = Registry.count(Phoenix.SessionProcess.Registry)
+    
+    if current_sessions < max_sessions do
+      :ok
+    else
+      {:error, :session_limit_reached}
     end
   end
 end

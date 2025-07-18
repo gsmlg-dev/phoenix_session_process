@@ -49,15 +49,15 @@ defmodule Phoenix.SessionProcess do
       Phoenix.SessionProcess.list_session()
   """
 
-  @spec start(binary()) :: :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
+  @spec start(binary()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
-  @spec start(binary(), atom()) :: :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
+  
+  @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id, module),
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :start_session
 
-  @spec start(binary(), atom(), any()) ::
-          :ignore | {:error, any()} | {:ok, pid()} | {:ok, pid(), any()}
+  @spec start(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id, module, arg),
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :start_session
@@ -72,12 +72,12 @@ defmodule Phoenix.SessionProcess do
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :terminate_session
 
-  @spec call(binary(), any(), :infinity | non_neg_integer()) :: any()
+  @spec call(binary(), any(), :infinity | non_neg_integer()) :: {:ok, any()} | {:error, term()}
   defdelegate call(session_id, request, timeout \\ 15_000),
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :call_on_session
 
-  @spec cast(binary(), any()) :: :ok
+  @spec cast(binary(), any()) :: :ok | {:error, term()}
   defdelegate cast(session_id, request),
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :cast_on_session
