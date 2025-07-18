@@ -6,7 +6,7 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
 
   test "telemetry events are emitted for session lifecycle" do
     session_id = "telemetry_test_session"
-    
+
     # Attach telemetry handlers
     events = [
       [:phoenix, :session_process, :start],
@@ -26,7 +26,9 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
       )
 
     # Test session start telemetry
-    assert {:ok, pid} = SessionProcess.start(session_id, Phoenix.SessionProcess.DefaultSessionProcess)
+    assert {:ok, pid} =
+             SessionProcess.start(session_id, Phoenix.SessionProcess.DefaultSessionProcess)
+
     assert_receive {:telemetry_event, [:phoenix, :session_process, :start], measurements, meta}
     assert meta.session_id == session_id
     assert meta.pid == pid
@@ -59,7 +61,11 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
       )
 
     assert {:error, {:invalid_session_id, ^session_id}} = SessionProcess.start(session_id)
-    assert_receive {:telemetry_event, [:phoenix, :session_process, :start_error], measurements, meta}, 500
+
+    assert_receive {:telemetry_event, [:phoenix, :session_process, :start_error], measurements,
+                    meta},
+                   500
+
     assert meta.session_id == session_id
     assert is_integer(measurements.duration)
 
@@ -81,7 +87,10 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
 
     result = Telemetry.measure("test_session", :test_operation, fn -> {:ok, "success"} end)
     assert result == {:ok, "success"}
-    assert_receive {:telemetry_event, [:phoenix, :session_process, :test_operation], measurements, meta}
+
+    assert_receive {:telemetry_event, [:phoenix, :session_process, :test_operation], measurements,
+                    meta}
+
     assert meta.session_id == "test_session"
     assert is_integer(measurements.duration)
 

@@ -132,42 +132,42 @@ defmodule Phoenix.SessionProcess.Telemetry do
   @spec measure(String.t(), atom(), fun()) :: {:ok, any()} | {:error, any()}
   def measure(session_id, operation, fun) do
     start_time = System.monotonic_time()
-    
+
     try do
       result = fun.()
       end_time = System.monotonic_time()
       duration = end_time - start_time
-      
+
       :telemetry.execute(
         [:phoenix, :session_process, operation],
         %{duration: duration},
         %{session_id: session_id}
       )
-      
+
       result
     rescue
       error ->
         end_time = System.monotonic_time()
         duration = end_time - start_time
-        
+
         :telemetry.execute(
           [:phoenix, :session_process, :error],
           %{duration: duration},
           %{session_id: session_id, operation: operation, error: error}
         )
-        
+
         reraise error, __STACKTRACE__
     catch
       kind, reason ->
         end_time = System.monotonic_time()
         duration = end_time - start_time
-        
+
         :telemetry.execute(
           [:phoenix, :session_process, :error],
           %{duration: duration},
           %{session_id: session_id, operation: operation, kind: kind, reason: reason}
         )
-        
+
         :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end

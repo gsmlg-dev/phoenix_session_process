@@ -12,7 +12,8 @@
       "Bash(mix docs:*)",
       "Bash(mix format:*)",
       "Bash(mix xref:*)",
-      "Bash(mix help:*)"
+      "Bash(mix help:*)",
+      "Bash(mix deps.get:*)"
     ],
     "deny": []
   }

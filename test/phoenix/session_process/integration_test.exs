@@ -5,7 +5,8 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
 
   test "session validation and limits" do
     # Test invalid session ID
-    assert {:error, {:invalid_session_id, "invalid@session"}} = SessionProcess.start("invalid@session")
+    assert {:error, {:invalid_session_id, "invalid@session"}} =
+             SessionProcess.start("invalid@session")
 
     # Test empty session ID
     assert {:error, {:invalid_session_id, ""}} = SessionProcess.start("")
@@ -14,12 +15,14 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
   test "error handling for non-existent sessions" do
     non_existent_session = "does_not_exist"
 
-    assert {:error, {:session_not_found, "does_not_exist"}} = SessionProcess.call(non_existent_session, :get_state)
+    assert {:error, {:session_not_found, "does_not_exist"}} =
+             SessionProcess.call(non_existent_session, :get_state)
 
     assert {:error, {:session_not_found, "does_not_exist"}} =
              SessionProcess.cast(non_existent_session, {:put, :key, "value"})
 
-    assert {:error, {:session_not_found, "does_not_exist"}} = SessionProcess.terminate(non_existent_session)
+    assert {:error, {:session_not_found, "does_not_exist"}} =
+             SessionProcess.terminate(non_existent_session)
   end
 
   test "session process can use custom modules" do

@@ -27,7 +27,8 @@ defmodule Phoenix.SessionProcess.Error do
   @doc """
   Creates a session limit reached error.
   """
-  @spec session_limit_reached(non_neg_integer()) :: {:error, {:session_limit_reached, non_neg_integer()}}
+  @spec session_limit_reached(non_neg_integer()) ::
+          {:error, {:session_limit_reached, non_neg_integer()}}
   def session_limit_reached(max_sessions) do
     {:error, {:session_limit_reached, max_sessions}}
   end

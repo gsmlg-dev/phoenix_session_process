@@ -114,6 +114,87 @@ defmodule Phoenix.SessionProcess do
     ])
   end
 
+  @doc """
+  Get session information including count and modules.
+  """
+  @spec session_info() :: %{count: integer(), modules: list(module())}
+  def session_info() do
+    sessions = list_session()
+
+    modules =
+      sessions
+      |> Enum.map(fn {_session_id, pid} ->
+        case Registry.lookup(Phoenix.SessionProcess.Registry, pid) do
+          [{_, module}] -> module
+          _ -> Phoenix.SessionProcess.Config.session_process()
+        end
+      end)
+      |> Enum.uniq()
+
+    %{
+      count: length(sessions),
+      modules: modules
+    }
+  end
+
+  @doc """
+  Get all session IDs for a specific module.
+  """
+  @spec list_sessions_by_module(module()) :: [binary()]
+  def list_sessions_by_module(module) do
+    Registry.select(Phoenix.SessionProcess.Registry, [
+      {{:"$1", :"$2", :"$_"}, [], [{{:"$1", :"$2", :"$_"}}]}
+    ])
+    |> Enum.filter(fn {_session_id, _pid, mod} -> mod == module end)
+    |> Enum.map(fn {session_id, _pid, _mod} -> session_id end)
+  end
+
+  @doc """
+  Check if a session exists and return its PID if it does.
+  """
+  @spec find_session(binary()) :: {:ok, pid()} | {:error, :not_found}
+  def find_session(session_id) do
+    case Phoenix.SessionProcess.ProcessSupervisor.session_process_pid(session_id) do
+      nil -> {:error, :not_found}
+      pid -> {:ok, pid}
+    end
+  end
+
+  @doc """
+  Get session statistics including process count and memory usage.
+  """
+  @spec session_stats() :: %{
+          total_sessions: integer(),
+          memory_usage: integer(),
+          avg_memory_per_session: integer()
+        }
+  def session_stats() do
+    sessions = list_session()
+    total_sessions = length(sessions)
+
+    memory_usage =
+      if total_sessions > 0 do
+        sessions
+        |> Enum.map(fn {_session_id, pid} ->
+          case :erlang.process_info(pid, :memory) do
+            {:memory, memory} -> memory
+            _ -> 0
+          end
+        end)
+        |> Enum.sum()
+      else
+        0
+      end
+
+    avg_memory = if total_sessions > 0, do: div(memory_usage, total_sessions), else: 0
+
+    %{
+      total_sessions: total_sessions,
+      memory_usage: memory_usage,
+      avg_memory_per_session: avg_memory
+    }
+  end
+
   defmacro __using__(:process) do
     quote do
       use GenServer

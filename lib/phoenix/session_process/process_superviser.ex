@@ -28,136 +28,15 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   def start_session(session_id) do
-    start_time = System.monotonic_time()
-
-    with :ok <- validate_session_id(session_id),
-         :ok <- check_session_limits() do
-      Logger.debug("Start Session: #{inspect(session_id)}")
-      module = Phoenix.SessionProcess.Config.session_process()
-      spec = {module, [name: child_name(session_id)]}
-
-      case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:ok, pid, _info} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:error, reason} = error ->
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start_error(session_id, module, reason, [duration: duration])
-          error
-      end
-    else
-      {:error, :invalid_session_id} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, :invalid_session_id, [duration: duration])
-        Error.invalid_session_id(session_id)
-
-      {:error, :session_limit_reached} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        max_sessions = Phoenix.SessionProcess.Config.max_sessions()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, {:session_limit_reached, max_sessions}, [duration: duration])
-        Error.session_limit_reached(max_sessions)
-    end
+    start_session_with_module(session_id, Phoenix.SessionProcess.Config.session_process())
   end
 
   def start_session(session_id, module) do
-    start_time = System.monotonic_time()
-
-    with :ok <- validate_session_id(session_id),
-         :ok <- check_session_limits() do
-      Logger.debug("Start Session: #{inspect(session_id)}")
-      spec = {module, [name: child_name(session_id)]}
-
-      case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:ok, pid, _info} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:error, reason} = error ->
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start_error(session_id, module, reason, [duration: duration])
-          error
-      end
-    else
-      {:error, :invalid_session_id} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, :invalid_session_id, [duration: duration])
-        Error.invalid_session_id(session_id)
-
-      {:error, :session_limit_reached} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        max_sessions = Phoenix.SessionProcess.Config.max_sessions()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, {:session_limit_reached, max_sessions}, [duration: duration])
-        Error.session_limit_reached(max_sessions)
-    end
+    start_session_with_module(session_id, module)
   end
 
   def start_session(session_id, module, arg) do
-    start_time = System.monotonic_time()
-
-    with :ok <- validate_session_id(session_id),
-         :ok <- check_session_limits() do
-      Logger.debug("Start Session: #{inspect(session_id)}")
-      spec = {module, [name: child_name(session_id), arg: arg]}
-
-      case DynamicSupervisor.start_child(__MODULE__, spec) do
-        {:ok, pid} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:ok, pid, _info} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start(session_id, module, pid, [duration: duration])
-          result
-
-        {:error, reason} = error ->
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_start_error(session_id, module, reason, [duration: duration])
-          error
-      end
-    else
-      {:error, :invalid_session_id} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, :invalid_session_id, [duration: duration])
-        Error.invalid_session_id(session_id)
-
-      {:error, :session_limit_reached} ->
-        module = Phoenix.SessionProcess.Config.session_process()
-        max_sessions = Phoenix.SessionProcess.Config.max_sessions()
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_session_start_error(session_id, module, {:session_limit_reached, max_sessions}, [duration: duration])
-        Error.session_limit_reached(max_sessions)
-    end
+    start_session_with_module(session_id, module, arg)
   end
 
   @spec session_process_started?(binary()) :: boolean()
@@ -183,11 +62,11 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
         case result do
           :ok ->
-            Telemetry.emit_session_stop(session_id, module, pid, [duration: duration])
+            Telemetry.emit_session_stop(session_id, module, pid, duration: duration)
             :ok
 
           error ->
-            Telemetry.emit_session_cleanup_error(session_id, module, error, [duration: duration])
+            Telemetry.emit_session_cleanup_error(session_id, module, error, duration: duration)
             error
         end
     end
@@ -202,23 +81,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
       pid ->
         module = get_session_module(pid)
-
-        try do
-          result = GenServer.call(pid, request, timeout)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_call(session_id, module, pid, request, [duration: duration])
-          result
-        catch
-          :exit, {:timeout, _} ->
-            duration = System.monotonic_time() - start_time
-            Telemetry.emit_communication_error(session_id, module, :call, :timeout, [duration: duration])
-            Error.timeout(timeout)
-
-          :exit, reason ->
-            duration = System.monotonic_time() - start_time
-            Telemetry.emit_communication_error(session_id, module, :call, reason, [duration: duration])
-            Error.call_failed(module, :call, {request}, reason)
-        end
+        do_call_on_session(session_id, pid, module, request, timeout, start_time)
     end
   end
 
@@ -231,18 +94,44 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
       pid ->
         module = get_session_module(pid)
+        do_cast_on_session(session_id, pid, module, request, start_time)
+    end
+  end
 
-        try do
-          result = GenServer.cast(pid, request)
-          duration = System.monotonic_time() - start_time
-          Telemetry.emit_session_cast(session_id, module, pid, request, [duration: duration])
-          result
-        catch
-          :exit, reason ->
-            duration = System.monotonic_time() - start_time
-            Telemetry.emit_communication_error(session_id, module, :cast, reason, [duration: duration])
-            Error.cast_failed(module, :cast, {request}, reason)
-        end
+  defp do_call_on_session(session_id, pid, module, request, timeout, start_time) do
+    try do
+      result = GenServer.call(pid, request, timeout)
+      duration = System.monotonic_time() - start_time
+      Telemetry.emit_session_call(session_id, module, pid, request, duration: duration)
+      result
+    catch
+      :exit, {:timeout, _} ->
+        duration = System.monotonic_time() - start_time
+
+        Telemetry.emit_communication_error(session_id, module, :call, :timeout,
+          duration: duration
+        )
+
+        Error.timeout(timeout)
+
+      :exit, reason ->
+        duration = System.monotonic_time() - start_time
+        Telemetry.emit_communication_error(session_id, module, :call, reason, duration: duration)
+        Error.call_failed(module, :call, {request}, reason)
+    end
+  end
+
+  defp do_cast_on_session(session_id, pid, module, request, start_time) do
+    try do
+      result = GenServer.cast(pid, request)
+      duration = System.monotonic_time() - start_time
+      Telemetry.emit_session_cast(session_id, module, pid, request, duration: duration)
+      result
+    catch
+      :exit, reason ->
+        duration = System.monotonic_time() - start_time
+        Telemetry.emit_communication_error(session_id, module, :cast, reason, duration: duration)
+        Error.cast_failed(module, :cast, {request}, reason)
     end
   end
 
@@ -253,9 +142,71 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
   @spec session_process_pid(binary()) :: nil | pid()
   def session_process_pid(session_id) do
-    case {Phoenix.SessionProcess.Registry, session_id} |> Registry.whereis_name() do
+    case Registry.whereis_name({Phoenix.SessionProcess.Registry, session_id}) do
       :undefined -> nil
       pid -> pid
+    end
+  end
+
+  defp start_session_with_module(session_id, module, arg \\ nil) do
+    start_time = System.monotonic_time()
+
+    with :ok <- validate_session_id(session_id),
+         :ok <- check_session_limits() do
+      Logger.debug("Start Session: #{inspect(session_id)}")
+
+      worker_args =
+        if arg, do: [name: child_name(session_id), arg: arg], else: [name: child_name(session_id)]
+
+      spec = {module, worker_args}
+
+      case DynamicSupervisor.start_child(__MODULE__, spec) do
+        {:ok, pid} = result ->
+          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          duration = System.monotonic_time() - start_time
+          Telemetry.emit_session_start(session_id, module, pid, duration: duration)
+          result
+
+        {:ok, pid, _info} = result ->
+          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
+          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          duration = System.monotonic_time() - start_time
+          Telemetry.emit_session_start(session_id, module, pid, duration: duration)
+          result
+
+        {:error, {:already_started, pid}} = result ->
+          duration = System.monotonic_time() - start_time
+          Telemetry.emit_session_start(session_id, module, pid, duration: duration)
+          result
+
+        {:error, reason} = error ->
+          duration = System.monotonic_time() - start_time
+          Telemetry.emit_session_start_error(session_id, module, reason, duration: duration)
+          error
+      end
+    else
+      {:error, :invalid_session_id} ->
+        duration = System.monotonic_time() - start_time
+
+        Telemetry.emit_session_start_error(session_id, module, :invalid_session_id,
+          duration: duration
+        )
+
+        Error.invalid_session_id(session_id)
+
+      {:error, :session_limit_reached} ->
+        max_sessions = Phoenix.SessionProcess.Config.max_sessions()
+        duration = System.monotonic_time() - start_time
+
+        Telemetry.emit_session_start_error(
+          session_id,
+          module,
+          {:session_limit_reached, max_sessions},
+          duration: duration
+        )
+
+        Error.session_limit_reached(max_sessions)
     end
   end
 
