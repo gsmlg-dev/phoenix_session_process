@@ -310,6 +310,28 @@ The library includes comprehensive tests. Run with:
 mix test
 ```
 
+## Benchmarking
+
+Measure the performance of the library with built-in benchmarks:
+
+### Quick Benchmark (5-10 seconds)
+```bash
+mix run bench/simple_bench.exs
+```
+
+### Comprehensive Benchmark (30-60 seconds)
+```bash
+mix run bench/session_benchmark.exs
+```
+
+### Expected Performance
+- **Session Creation**: 10,000+ sessions/sec
+- **Session Cleanup**: 20,000+ sessions/sec
+- **Memory Usage**: ~10KB per session
+- **Registry Lookups**: 100,000+ lookups/sec
+
+See `bench/README.md` for detailed benchmarking guide and customization options.
+
 ## License
 
 [MIT License](LICENSE)
