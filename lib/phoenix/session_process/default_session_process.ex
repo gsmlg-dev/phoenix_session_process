@@ -20,6 +20,12 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   end
 
   @impl true
+  def handle_call({:sleep, duration}, _from, state) do
+    Process.sleep(duration)
+    {:reply, :ok, state}
+  end
+
+  @impl true
   def handle_cast({:put, key, value}, state) do
     {:noreply, Map.put(state, key, value)}
   end

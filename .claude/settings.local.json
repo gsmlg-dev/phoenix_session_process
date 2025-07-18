@@ -8,7 +8,11 @@
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(mix docs:*)",
+      "Bash(mix format:*)",
+      "Bash(mix xref:*)",
+      "Bash(mix help:*)"
     ],
     "deny": []
   }

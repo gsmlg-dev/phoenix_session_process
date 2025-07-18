@@ -52,11 +52,36 @@ defmodule Phoenix.SessionProcess do
   @spec start(binary()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
 
+  @doc """
+  Start a session process with a specific module.
+
+  ## Examples
+
+      iex> result = Phoenix.SessionProcess.start("valid_session", Phoenix.SessionProcess.DefaultSessionProcess)
+      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
+      true
+
+      iex> Phoenix.SessionProcess.start("invalid@session", Phoenix.SessionProcess.DefaultSessionProcess)
+      {:error, {:invalid_session_id, "invalid@session"}}
+  """
   @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id, module),
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :start_session
 
+  @doc """
+  Start a session process with a specific module and initialization arguments.
+
+  ## Examples
+
+      iex> result = Phoenix.SessionProcess.start("valid_session_with_args", Phoenix.SessionProcess.DefaultSessionProcess, %{user_id: 123})
+      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
+      true
+
+      iex> result = Phoenix.SessionProcess.start("valid_session_with_list", Phoenix.SessionProcess.DefaultSessionProcess, [debug: true])
+      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
+      true
+  """
   @spec start(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
   defdelegate start(session_id, module, arg),
     to: Phoenix.SessionProcess.ProcessSupervisor,

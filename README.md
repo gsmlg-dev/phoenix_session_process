@@ -1,13 +1,21 @@
 # Phoenix.SessionProcess
 
-Create a process for each session, all user requests would through this process.
+Create a process for each user session, all user requests go through this process. This provides session isolation, state management, and automatic cleanup with TTL support.
 
 * [Github Repo](https://github.com/gsmlg-dev/phoenix_session_process)
 
+## Features
+
+- **Session Isolation**: Each user session runs in its own GenServer process
+- **Automatic Cleanup**: TTL-based automatic session cleanup
+- **Configuration Management**: Configurable TTL, session limits, and rate limiting
+- **LiveView Integration**: Built-in support for monitoring LiveView processes
+- **Extensible**: Custom session process modules with full GenServer support
+- **Validation**: Session ID validation and concurrent session limits
+
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `phoenix_session_process` to your list of dependencies in `mix.exs`:
+Add `phoenix_session_process` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -17,162 +25,291 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/phoenix_session_process>.
+## Quick Start
 
+### 1. Add to Supervision Tree
 
-## How to
-
-Add superviser to process tree
+Add the supervisor to your application's supervision tree:
 
 ```elixir
-    [
-      ...
-      {Phoenix.SessionProcess.Supervisor, []}
-    ]
-```
+# in lib/my_app/application.ex
+def start(_type, _args) do
+  children = [
+    # ... other children ...
+    {Phoenix.SessionProcess.Supervisor, []}
+  ]
 
-Add this after the `:fetch_session` plug to generate a unique session ID.
-
-```elixir
-    plug :fetch_session
-    plug Phoenix.SessionProcess.SessionId
-```
-
-Start a session process with a session ID.
-
-```elixir
-    Phoenix.SessionProcess.start("session_id")
-```
-
-This will start a session process using the module defined with
-
-```elixir
-    config :phoenix_session_process, session_process: MySessionProcess
-```
-
-Define MySessionProcess
-
-```elixir
-defmodule MySessionProcess do
-  @doc """
-  The use macro is expanded as
-
-      use GenServer
-
-      def start_link(name: name, arg: arg) do
-        GenServer.start_link(__MODULE__, arg, name: name)
-      end
-      def start_link(name: name) do
-        GenServer.start_link(__MODULE__, %{}, name: name)
-      end
-  """
-  use Phoenix.SessionProcess, :process
-end
-
-# with monitor live view
-defmodule MySessionProcessWithMonitor do
-  @doc """
-  The use macro is expanded as
-
-      use GenServer
-
-      def start_link(name: name, arg: arg) do
-        GenServer.start_link(__MODULE__, arg, name: name)
-      end
-      def start_link(name: name) do
-        GenServer.start_link(__MODULE__, %{}, name: name)
-      end
-
-      @impl true
-      def init(arg) do
-        Process.flag(:trap_exit, true)
-
-        {:ok, state}
-      end
-
-      @impl true
-      def handle_call(:get_state, _from, state) do
-        {:reply, state, state}
-      end
-
-      @impl true
-      def handle_cast({:monitor, pid}, state) do
-        state = state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
-        Process.monitor(pid)
-        {:noreply, state}
-      end
-
-      @impl true
-      def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-        state = state |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
-
-        {:noreply, state}
-      end
-
-      @impl true
-      def terminate(reason, state) do
-        state
-        |> Map.get(:__live_view__, [])
-        |> Enum.each(&Process.send_after(&1, :session_expired, 0))
-      end
-
-  In live view
-
-      def mount(_params, %{"session_id" => session_id} = _session, socket) do
-        socket = socket
-        |> assign(:session_id, session_id)
-
-        Phoenix.SessionProcess.cast(session_id, {:monitor, self()})
-
-        {:ok, socket}
-      end
-
-      # trap session expires
-      def handle_info(:session_expired, socket) do
-        {:noreply, socket |> redirect(to: @sign_in_page)}
-      end
-  """
-  use Phoenix.SessionProcess, :process
+  Supervisor.start_link(children, strategy: :one_for_one)
 end
 ```
 
-Or you can start a session process with a specific module.
+### 2. Configure Session ID Generation
+
+Add the session ID plug after `:fetch_session` in your router:
 
 ```elixir
-    Phoenix.SessionProcess.start("session_id", MySessionProcess)
-    # or
-    Phoenix.SessionProcess.start("session_id", MySessionProcess, arg)
+# in lib/my_app_web/router.ex
+pipeline :browser do
+  plug :accepts, ["html"]
+  plug :fetch_session
+  plug Phoenix.SessionProcess.SessionId  # Add this line
+  # ... other plugs ...
+end
 ```
 
-Check if a session process is started.
+### 3. Basic Usage
+
+In your controllers, start and use session processes:
 
 ```elixir
-    Phoenix.SessionProcess.started?("session_id")
+defmodule MyAppWeb.PageController do
+  use MyAppWeb, :controller
+
+  def index(conn, _params) do
+    session_id = conn.assigns.session_id
+    
+    # Start session process
+    {:ok, _pid} = Phoenix.SessionProcess.start(session_id)
+    
+    # Store user data
+    Phoenix.SessionProcess.cast(session_id, {:put, :user_id, conn.assigns.current_user.id})
+    Phoenix.SessionProcess.cast(session_id, {:put, :last_seen, DateTime.utc_now()})
+    
+    render(conn, "index.html")
+  end
+end
 ```
 
-Terminate a session process.
+## Configuration
+
+Configure the library in your `config/config.exs`:
 
 ```elixir
-    Phoenix.SessionProcess.terminate("session_id")
+config :phoenix_session_process,
+  session_process: MyApp.SessionProcess,  # Default session module
+  max_sessions: 10_000,                   # Maximum concurrent sessions
+  session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
+  rate_limit: 100                        # Sessions per minute limit
 ```
 
-Genserver call on a session process.
+## Usage Examples
+
+### Basic Session Process
+
+Create a simple session process to store user state:
 
 ```elixir
-    Phoenix.SessionProcess.call("session_id", request)
+defmodule MyApp.SessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init(_init_arg) do
+    {:ok, %{user_id: nil, preferences: %{}}}
+  end
+
+  @impl true
+  def handle_call(:get_user, _from, state) do
+    {:reply, state.user_id, state}
+  end
+
+  @impl true
+  def handle_cast({:set_user, user_id}, state) do
+    {:noreply, %{state | user_id: user_id}}
+  end
+end
 ```
 
-Genserver cast on a session process.
+### With LiveView Integration
+
+Create a session process that monitors LiveView processes:
 
 ```elixir
-    Phoenix.SessionProcess.cast("session_id", request)
+defmodule MyApp.SessionProcessWithLiveView do
+  use Phoenix.SessionProcess, :process_link
+
+  @impl true
+  def init(_init_arg) do
+    {:ok, %{user: nil, live_views: []}}
+  end
+
+  @impl true
+  def handle_call(:get_user, _from, state) do
+    {:reply, state.user, state}
+  end
+
+  @impl true
+  def handle_cast({:set_user, user}, state) do
+    {:noreply, %{state | user: user}}
+  end
+end
 ```
 
-Get session id in SessionProcess.
+In your LiveView:
 
 ```elixir
+defmodule MyAppWeb.UserLive do
+  use MyAppWeb, :live_view
+
+  def mount(_params, %{"session_id" => session_id} = _session, socket) do
+    Phoenix.SessionProcess.cast(session_id, {:monitor, self()})
+    {:ok, assign(socket, session_id: session_id)}
+  end
+
+  def handle_info(:session_expired, socket) do
+    {:noreply, redirect(socket, to: "/login")}
+  end
+end
+```
+
+## API Reference
+
+### Starting Sessions
+
+```elixir
+# Start with default module
+{:ok, pid} = Phoenix.SessionProcess.start("session_123")
+
+# Start with custom module
+{:ok, pid} = Phoenix.SessionProcess.start("session_123", MyApp.CustomProcess)
+
+# Start with custom module and arguments
+{:ok, pid} = Phoenix.SessionProcess.start("session_123", MyApp.CustomProcess, %{user_id: 456})
+```
+
+### Communication
+
+```elixir
+# Check if session exists
+Phoenix.SessionProcess.started?("session_123")
+
+# Call the session process
+{:ok, user} = Phoenix.SessionProcess.call("session_123", :get_user)
+
+# Cast to the session process
+:ok = Phoenix.SessionProcess.cast("session_123", {:set_user, user})
+
+# Terminate session
+:ok = Phoenix.SessionProcess.terminate("session_123")
+
+# List all sessions
+sessions = Phoenix.SessionProcess.list_session()
+```
+
+### Session Process Helpers
+
+Inside your session process, use:
+
+```elixir
+defmodule MyApp.SessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  def get_session_id() do
+    # Returns the session ID for this process
     get_session_id()
+  end
+end
 ```
 
+## Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `:session_process` | `Phoenix.SessionProcess.DefaultSessionProcess` | Default session module |
+| `:max_sessions` | `10_000` | Maximum concurrent sessions |
+| `:session_ttl` | `3_600_000` | Session TTL in milliseconds |
+| `:rate_limit` | `100` | Sessions per minute limit |
+
+## Telemetry and Monitoring
+
+The library emits comprehensive telemetry events for monitoring and debugging:
+
+### Session Lifecycle Events
+- `[:phoenix, :session_process, :start]` - When a session starts
+- `[:phoenix, :session_process, :stop]` - When a session stops
+- `[:phoenix, :session_process, :start_error]` - When session start fails
+
+### Communication Events
+- `[:phoenix, :session_process, :call]` - When a call is made to a session
+- `[:phoenix, :session_process, :cast]` - When a cast is made to a session
+- `[:phoenix, :session_process, :communication_error]` - When communication fails
+
+### Cleanup Events
+- `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
+- `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
+
+### Example Telemetry Setup
+
+```elixir
+# Attach telemetry handlers
+:telemetry.attach_many("session-handler", [
+  [:phoenix, :session_process, :start],
+  [:phoenix, :session_process, :stop]
+], fn event, measurements, meta, _ ->
+  Logger.info("Session event: #{inspect(event)} #{inspect(meta)}")
+end, nil)
+
+# Monitor session performance
+:telemetry.attach("session-performance", [:phoenix, :session_process, :call], fn
+  _, %{duration: duration}, %{session_id: session_id}, _ ->
+    if duration > 1_000_000 do  # > 1ms
+      Logger.warn("Slow session call for #{session_id}: #{duration}µs")
+    end
+end, nil)
+```
+
+## Error Handling
+
+The library provides detailed error responses with the `Phoenix.SessionProcess.Error` module:
+
+### Error Types
+- `{:error, {:invalid_session_id, session_id}}` - Invalid session ID format
+- `{:error, {:session_limit_reached, max_sessions}}` - Maximum sessions exceeded
+- `{:error, {:session_not_found, session_id}}` - Session doesn't exist
+- `{:error, {:process_not_found, session_id}}` - Process not found
+- `{:error, {:timeout, timeout}}` - Operation timed out
+- `{:error, {:call_failed, {module, function, args, reason}}}` - Call operation failed
+- `{:error, {:cast_failed, {module, function, args, reason}}}` - Cast operation failed
+
+### Error Handling Examples
+
+```elixir
+case Phoenix.SessionProcess.start(session_id) do
+  {:ok, pid} ->
+    # Session started successfully
+    {:ok, pid}
+
+  {:error, {:invalid_session_id, id}} ->
+    Logger.error("Invalid session ID: #{id}")
+    {:error, :invalid_session}
+
+  {:error, {:session_limit_reached, max}} ->
+    Logger.warn("Session limit reached: #{max}")
+    {:error, :too_many_sessions}
+
+  {:error, reason} ->
+    Logger.error("Failed to start session: #{inspect(reason)}")
+    {:error, :session_start_failed}
+end
+```
+
+### Human-Readable Error Messages
+
+Use `Phoenix.SessionProcess.Error.message/1` to get human-readable error messages:
+
+```elixir
+{:error, error} = Phoenix.SessionProcess.start("invalid@session")
+Phoenix.SessionProcess.Error.message(error)
+# Returns: "Invalid session ID format: \"invalid@session\""
+```
+
+## Testing
+
+The library includes comprehensive tests. Run with:
+
+```bash
+mix test
+```
+
+## License
+
+[MIT License](LICENSE)

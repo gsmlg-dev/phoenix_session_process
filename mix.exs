@@ -35,6 +35,7 @@ defmodule Phoenix.SessionProcess.MixProject do
   defp deps do
     [
       {:plug, "~> 1.0"},
+      {:telemetry, "~> 1.0"},
       {:ex_doc, ">= 0.0.0", only: :prod, runtime: false}
     ]
   end
