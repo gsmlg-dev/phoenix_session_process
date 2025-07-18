@@ -5,7 +5,7 @@ defmodule Phoenix.SessionProcess.State do
   use Agent
 
   def start_link(initial_state \\ %{}) do
-    Agent.start_link(fn -> initial_state end, name: __MODULE__)
+    Agent.start_link(fn -> initial_state end)
   end
 
   def get(pid, key) do
