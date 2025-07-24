@@ -1,7 +1,7 @@
 defmodule Phoenix.SessionProcess.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.4.0"
   @source_url "https://github.com/gsmlg-dev/phoenix_session_process"
 
   def project do
@@ -35,7 +35,8 @@ defmodule Phoenix.SessionProcess.MixProject do
   defp deps do
     [
       {:plug, "~> 1.0"},
-      {:ex_doc, ">= 0.0.0", only: :prod, runtime: false}
+      {:telemetry, "~> 1.0"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 

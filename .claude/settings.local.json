@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mix test)",
+      "Bash(mix test:*)",
+      "Bash(iex:*)",
+      "Bash(mix compile:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(mix docs:*)",
+      "Bash(mix format:*)",
+      "Bash(mix xref:*)",
+      "Bash(mix help:*)",
+      "Bash(mix deps.get:*)",
+      "Bash(mix run:*)"
+    ],
+    "deny": []
+  }
+}

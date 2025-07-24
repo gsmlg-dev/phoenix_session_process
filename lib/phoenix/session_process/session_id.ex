@@ -29,6 +29,8 @@ defmodule Phoenix.SessionProcess.SessionId do
 
   @spec generate_unique_session_id() :: binary()
   def generate_unique_session_id() do
-    :crypto.strong_rand_bytes(16) |> Base.encode16()
+    # Use 24 bytes (192 bits) for URL-safe session ID
+    :crypto.strong_rand_bytes(24)
+    |> Base.url_encode64(padding: false)
   end
 end
