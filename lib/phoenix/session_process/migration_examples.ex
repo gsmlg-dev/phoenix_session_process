@@ -12,9 +12,9 @@ defmodule Phoenix.SessionProcess.MigrationExamples do
   def old_approach_docs do
     """
     Traditional State Management (Legacy):
-    
+
     The traditional approach uses direct state manipulation with handle_call and handle_cast:
-    
+
     defmodule MyApp.OldSessionProcess do
       use Phoenix.SessionProcess, :process
 
@@ -42,9 +42,9 @@ defmodule Phoenix.SessionProcess.MigrationExamples do
   def new_approach_docs do
     """
     Redux-Style State Management (New):
-    
+
     The Redux approach uses actions and reducers for predictable state updates:
-    
+
     defmodule MyApp.NewSessionProcess do
       use Phoenix.SessionProcess, :process
       use Phoenix.SessionProcess.Redux
@@ -84,11 +84,11 @@ defmodule Phoenix.SessionProcess.MigrationExamples do
   def migration_strategies_docs do
     """
     Migration Strategies:
-    
+
     1. Gradual Migration: Add Redux alongside existing state management
     2. Wrapper Module: Create a wrapper that provides both interfaces
     3. Adapter Pattern: Use an adapter to translate between patterns
-    
+
     Recommended approach is gradual migration for backward compatibility.
     """
   end
@@ -99,22 +99,22 @@ defmodule Phoenix.SessionProcess.MigrationExamples do
   def action_patterns_docs do
     """
     Common Action Patterns:
-    
+
     # User actions
     {:user_login, user}
     {:user_logout}
     {:user_update, changes}
-    
+
     # Data actions
     {:data_set, key, value}
     {:data_delete, key}
     {:data_merge, map}
-    
+
     # Collection actions
     {:collection_add, collection_name, item}
     {:collection_remove, collection_name, item_id}
     {:collection_update, collection_name, item_id, changes}
-    
+
     # Reset actions
     :reset_all
     {:reset_key, key}

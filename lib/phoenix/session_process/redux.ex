@@ -130,21 +130,22 @@ defmodule Phoenix.SessionProcess.Redux do
 
   defp apply_action(redux, action, reducer) do
     # Apply middleware chain
-    middleware_list = Enum.reverse(redux.middleware)  # Apply in reverse order like Redux
-    
+    # Apply in reverse order like Redux
+    middleware_list = Enum.reverse(redux.middleware)
+
     # Base reducer that takes only action
     base_reducer = fn act ->
       reducer.(redux.current_state, act)
     end
-    
+
     # Build middleware chain
-    final_reducer = 
+    final_reducer =
       Enum.reduce(middleware_list, base_reducer, fn middleware, next ->
         fn act ->
           middleware.(act, redux.current_state, next)
         end
       end)
-    
+
     new_state = final_reducer.(action)
 
     history_entry = %{
@@ -154,14 +155,11 @@ defmodule Phoenix.SessionProcess.Redux do
       timestamp: System.system_time(:millisecond)
     }
 
-    new_history = 
+    new_history =
       [history_entry | redux.history]
       |> Enum.take(redux.max_history_size)
 
-    %{redux | 
-      current_state: new_state,
-      history: new_history
-    }
+    %{redux | current_state: new_state, history: new_history}
   end
 
   @doc """
@@ -215,10 +213,7 @@ defmodule Phoenix.SessionProcess.Redux do
   """
   @spec reset(%__MODULE__{}) :: %__MODULE__{}
   def reset(redux) do
-    %{redux | 
-      current_state: redux.initial_state,
-      history: []
-    }
+    %{redux | current_state: redux.initial_state, history: []}
   end
 
   @doc """
@@ -239,7 +234,7 @@ defmodule Phoenix.SessionProcess.Redux do
       raise "Cannot time travel beyond history length"
     end
 
-    target_state = 
+    target_state =
       redux.history
       |> Enum.drop(steps_back)
       |> Enum.reverse()
@@ -251,10 +246,7 @@ defmodule Phoenix.SessionProcess.Redux do
         end
       end)
 
-    %{redux | 
-      current_state: target_state,
-      history: Enum.drop(redux.history, steps_back)
-    }
+    %{redux | current_state: target_state, history: Enum.drop(redux.history, steps_back)}
   end
 
   @doc """
