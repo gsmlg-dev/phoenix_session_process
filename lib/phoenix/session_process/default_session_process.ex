@@ -26,6 +26,11 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   end
 
   @impl true
+  def handle_call(any, _from, state) do
+    {:reply, any, state}
+  end
+
+  @impl true
   def handle_cast({:put, key, value}, state) do
     {:noreply, Map.put(state, key, value)}
   end
@@ -33,5 +38,10 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   @impl true
   def handle_cast({:delete, key}, state) do
     {:noreply, Map.delete(state, key)}
+  end
+
+  @impl true
+  def handle_cast(_any, state) do
+    {:noreply, state}
   end
 end

@@ -3,7 +3,7 @@ defmodule Phoenix.SessionProcess.Config do
   Configuration for Phoenix.SessionProcess.
   """
 
-  @default_session_process __MODULE__.DefaultSessionProcess
+  @default_session_process Phoenix.SessionProcess.DefaultSessionProcess
   @default_max_sessions 10_000
   # 1 hour in milliseconds
   @default_session_ttl 3_600_000
