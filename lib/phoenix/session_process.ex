@@ -115,7 +115,32 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Get session information including count and modules.
+  Returns all active sessions as a list of `{session_id, pid}` tuples.
+
+  ## Examples
+
+      iex> sessions = Phoenix.SessionProcess.list_session()
+      iex> is_list(sessions)
+      true
+      iex> [{session_id, pid}] = sessions
+  """
+
+  @doc """
+  Returns session statistics including total count and modules in use.
+
+  ## Examples
+
+      iex> info = Phoenix.SessionProcess.session_info()
+      iex> is_map(info)
+      true
+      iex> Map.has_key?(info, :count)
+      true
+      iex> Map.has_key?(info, :modules)
+      true
+
+  ## Returns
+
+  - `%{count: integer(), modules: list(module())}` - A map containing the total number of active sessions and a list of unique session process modules.
   """
   @spec session_info() :: %{count: integer(), modules: list(module())}
   def session_info() do
@@ -138,7 +163,23 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Get all session IDs for a specific module.
+  Returns all session IDs for sessions managed by a specific module.
+
+  ## Examples
+
+      iex> sessions = Phoenix.SessionProcess.list_sessions_by_module(MyApp.SessionProcess)
+      iex> is_list(sessions)
+      true
+      iex> Enum.all?(sessions, &is_binary/1)
+      true
+
+  ## Parameters
+
+  - `module` - The session process module to filter by
+
+  ## Returns
+
+  - `[binary()]` - List of session IDs managed by the specified module
   """
   @spec list_sessions_by_module(module()) :: [binary()]
   def list_sessions_by_module(module) do
@@ -150,7 +191,28 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Check if a session exists and return its PID if it does.
+  Finds a session by its ID and returns its PID if it exists.
+
+  This is different from `started?/1` in that it returns the actual PID
+  of the session process, which can be used for direct process operations.
+
+  ## Examples
+
+      iex> {:ok, pid} = Phoenix.SessionProcess.find_session("session_123")
+      iex> is_pid(pid)
+      true
+
+      iex> {:error, :not_found} = Phoenix.SessionProcess.find_session("nonexistent")
+      iex> {:error, :not_found}
+
+  ## Parameters
+
+  - `session_id` - The session ID to look up
+
+  ## Returns
+
+  - `{:ok, pid()}` - The PID of the session process if found
+  - `{:error, :not_found}` - If the session doesn't exist
   """
   @spec find_session(binary()) :: {:ok, pid()} | {:error, :not_found}
   def find_session(session_id) do
@@ -161,7 +223,28 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Get session statistics including process count and memory usage.
+  Returns detailed session statistics including process count and memory usage.
+
+  Useful for monitoring and debugging session process performance.
+
+  ## Examples
+
+      iex> stats = Phoenix.SessionProcess.session_stats()
+      iex> is_map(stats)
+      true
+      iex> Map.has_key?(stats, :total_sessions)
+      true
+      iex> Map.has_key?(stats, :memory_usage)
+      true
+      iex> Map.has_key?(stats, :avg_memory_per_session)
+      true
+
+  ## Returns
+
+  - `%{total_sessions: integer(), memory_usage: integer(), avg_memory_per_session: integer()}` - Session statistics map
+    - `total_sessions` - Total number of active session processes
+    - `memory_usage` - Total memory usage in bytes for all session processes
+    - `avg_memory_per_session` - Average memory usage per session in bytes
   """
   @spec session_stats() :: %{
           total_sessions: integer(),

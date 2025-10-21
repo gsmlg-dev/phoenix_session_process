@@ -19,6 +19,22 @@ This is Phoenix.SessionProcess, an Elixir library that creates a process for eac
 ### Testing
 The test suite uses ExUnit. Tests are located in the `test/` directory. The test helper starts the supervisor automatically.
 
+### Development Environment
+The project uses `devenv` for development environment setup with Nix. Key configuration:
+- Uses Elixir/BEAM 27
+- Runs `hello` script on shell entry for greeting
+- Includes git, figlet, and lolcat tools
+
+### Benchmarking
+Performance testing available via:
+- `mix run bench/simple_bench.exs` - Quick benchmark (5-10 seconds)
+- `mix run bench/session_benchmark.exs` - Comprehensive benchmark (30-60 seconds)
+
+Expected performance:
+- Session Creation: 10,000+ sessions/sec
+- Memory Usage: ~10KB per session
+- Registry Lookups: 100,000+ lookups/sec
+
 ## Architecture
 
 ### Core Components
@@ -59,10 +75,18 @@ The test suite uses ExUnit. Tests are located in the `test/` directory. The test
 
 The library uses application configuration:
 ```elixir
-config :phoenix_session_process, session_process: MySessionProcess
+config :phoenix_session_process,
+  session_process: MySessionProcess,  # Default session module
+  max_sessions: 10_000,                   # Maximum concurrent sessions
+  session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
+  rate_limit: 100                        # Sessions per minute limit
 ```
 
-This sets the default module to use when starting session processes without specifying a module.
+Configuration options:
+- `session_process`: Default module for session processes (defaults to `Phoenix.SessionProcess.DefaultSessionProcess`)
+- `max_sessions`: Maximum concurrent sessions (defaults to 10,000)
+- `session_ttl`: Session TTL in milliseconds (defaults to 1 hour)
+- `rate_limit`: Sessions per minute limit (defaults to 100)
 
 ## Usage in Phoenix Applications
 
@@ -71,3 +95,22 @@ This sets the default module to use when starting session processes without spec
 3. Define custom session process modules using the provided macros
 4. Start processes with session IDs
 5. Communicate using call/cast operations
+
+## Telemetry and Error Handling
+
+### Telemetry Events
+The library emits comprehensive telemetry events for monitoring:
+- `[:phoenix, :session_process, :start]` - Session starts
+- `[:phoenix, :session_process, :stop]` - Session stops
+- `[:phoenix, :session_process, :call]` - Call operations
+- `[:phoenix, :session_process, :cast]` - Cast operations
+- `[:phoenix, :session_process, :cleanup]` - Session cleanup
+
+### Error Types
+Common error responses:
+- `{:error, {:invalid_session_id, session_id}}` - Invalid session ID format
+- `{:error, {:session_limit_reached, max_sessions}}` - Maximum sessions exceeded
+- `{:error, {:session_not_found, session_id}}` - Session doesn't exist
+- `{:error, {:timeout, timeout}}` - Operation timed out
+
+Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.

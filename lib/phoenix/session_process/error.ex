@@ -1,6 +1,80 @@
 defmodule Phoenix.SessionProcess.Error do
   @moduledoc """
-  Custom error types and handling for Phoenix.SessionProcess.
+  Comprehensive error handling for Phoenix.SessionProcess operations.
+
+  This module provides structured error types, helper functions for creating errors,
+  and utilities for converting errors to human-readable messages. All public functions
+  in the Phoenix.SessionProcess library return standardized error tuples that can be
+  handled using this module.
+
+  ## Error Types
+
+  The library returns errors in the format `{:error, error_details}` where `error_details`
+  follows these patterns:
+
+  ### Session Management Errors
+  - `{:invalid_session_id, session_id}` - Session ID format is invalid
+  - `{:session_limit_reached, max_sessions}` - Maximum concurrent sessions exceeded
+  - `{:session_not_found, session_id}` - Session doesn't exist or has expired
+
+  ### Process Communication Errors
+  - `{:process_not_found, session_id}` - Session process not found in registry
+  - `{:timeout, timeout}` - Operation timed out
+  - `{:call_failed, {module, function, args, reason}}` - GenServer call failed
+  - `{:cast_failed, {module, function, args, reason}}` - GenServer cast failed
+
+  ## Usage Examples
+
+  ### Handling Errors
+
+  Use pattern matching to handle different error types returned by Phoenix.SessionProcess functions:
+
+      case Phoenix.SessionProcess.start("session_123") do
+        {:ok, _pid} ->
+          # Success case
+
+        {:error, {:invalid_session_id, _id}} ->
+          # Handle invalid session ID
+          {:error, :invalid_session}
+
+        {:error, {:session_limit_reached, _max}} ->
+          # Handle session limit exceeded
+          {:error, :too_many_sessions}
+
+        {:error, _reason} ->
+          # Handle other errors
+          {:error, :session_failed}
+      end
+
+  ### Creating Custom Errors
+
+  Use the helper functions to create standardized errors:
+
+      Phoenix.SessionProcess.Error.invalid_session_id("invalid@id")
+      Phoenix.SessionProcess.Error.session_limit_reached(1000)
+
+  ### Converting to Human-Readable Messages
+
+  Use the `message/1` function to convert errors to human-readable strings:
+
+      error = Phoenix.SessionProcess.Error.invalid_session_id("invalid@id")
+      Phoenix.SessionProcess.Error.message(error)
+      # Returns: "Invalid session ID format: \"invalid@id\""
+
+  ## Error Recovery Strategies
+
+  ### Session Expiration
+  When `{:session_not_found, session_id}` is encountered, it typically means the
+  session has expired due to TTL. The appropriate response is to redirect the user
+  to login or create a new session.
+
+  ### Rate Limiting
+  When `{:session_limit_reached, max_sessions}` occurs, implement backoff strategies
+  and consider increasing the `:max_sessions` configuration if appropriate.
+
+  ### Timeout Handling
+  Timeout errors may indicate system overload. Consider implementing retry logic
+  with exponential backoff for transient failures.
   """
 
   @typedoc """
@@ -18,6 +92,11 @@ defmodule Phoenix.SessionProcess.Error do
 
   @doc """
   Creates an invalid session ID error.
+
+  ## Examples
+
+      iex> Phoenix.SessionProcess.Error.invalid_session_id("invalid@id")
+      {:error, {:invalid_session_id, "invalid@id"}}
   """
   @spec invalid_session_id(String.t()) :: {:error, {:invalid_session_id, String.t()}}
   def invalid_session_id(session_id) do
