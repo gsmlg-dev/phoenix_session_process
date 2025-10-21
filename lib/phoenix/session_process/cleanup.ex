@@ -97,7 +97,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
     if Phoenix.SessionProcess.ProcessSupervisor.session_process_started?(session_id) do
-      Logger.debug("Auto-cleanup expired session: #{session_id}")
+      session_pid = Phoenix.SessionProcess.ProcessSupervisor.session_process_pid(session_id)
+      Phoenix.SessionProcess.Telemetry.emit_auto_cleanup_event(session_id, Phoenix.SessionProcess.Helpers.get_session_module(session_pid), session_pid)
       Phoenix.SessionProcess.terminate(session_id)
     end
 

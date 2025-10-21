@@ -126,7 +126,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   """
   def start_child(worker, worker_arg) do
     worker_spec = {worker, worker_arg}
-    Logger.debug("Start Child Worker: #{inspect(worker_spec)}")
+    Phoenix.SessionProcess.Telemetry.emit_worker_start(worker_spec)
     DynamicSupervisor.start_child(__MODULE__, worker_spec)
   end
 
@@ -143,7 +143,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   - `{:error, reason}` - Failed to terminate child process
   """
   def terminate_child(pid) do
-    Logger.debug("Terminating Child Worker: #{inspect(pid)}")
+    Phoenix.SessionProcess.Telemetry.emit_worker_terminate(pid)
     DynamicSupervisor.terminate_child(__MODULE__, pid)
   end
 
@@ -255,7 +255,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   """
   @spec terminate_session(binary()) :: :ok | {:error, :not_found}
   def terminate_session(session_id) do
-    Logger.debug("End Session: #{inspect(session_id)}")
+    Phoenix.SessionProcess.Telemetry.emit_session_end_event(session_id)
     start_time = System.monotonic_time()
 
     case session_process_pid(session_id) do
@@ -360,7 +360,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
     with :ok <- validate_session_id(session_id),
          :ok <- check_session_limits() do
-      Logger.debug("Start Session: #{inspect(session_id)}")
+      Phoenix.SessionProcess.Telemetry.emit_session_start_event(session_id)
 
       worker_args =
         if arg, do: [name: child_name(session_id), arg: arg], else: [name: child_name(session_id)]

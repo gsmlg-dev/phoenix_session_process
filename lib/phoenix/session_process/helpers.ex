@@ -177,4 +177,15 @@ defmodule Phoenix.SessionProcess.Helpers do
         {:error, reason}
     end
   end
+
+  @doc """
+  Gets the session module for a given process PID.
+  """
+  @spec get_session_module(pid()) :: module()
+  def get_session_module(pid) do
+    case Registry.lookup(Phoenix.SessionProcess.Registry, pid) do
+      [{_, module}] -> module
+      _ -> Phoenix.SessionProcess.Config.session_process()
+    end
+  end
 end
