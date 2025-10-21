@@ -107,23 +107,22 @@ defmodule Phoenix.SessionProcess do
     to: Phoenix.SessionProcess.ProcessSupervisor,
     as: :cast_on_session
 
+  @doc """
+  Returns all active sessions as a list of `{session_id, pid}` tuples.
+
+  ## Examples
+
+      iex> is_list(Phoenix.SessionProcess.list_session())
+      true
+
+      # Returns list of {session_id, pid} tuples, or empty list if no sessions exist
+  """
   @spec list_session() :: [{binary(), pid()}, ...]
   def list_session() do
     Registry.select(Phoenix.SessionProcess.Registry, [
       {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
     ])
   end
-
-  @doc """
-  Returns all active sessions as a list of `{session_id, pid}` tuples.
-
-  ## Examples
-
-      iex> sessions = Phoenix.SessionProcess.list_session()
-      iex> is_list(sessions)
-      true
-      iex> [{session_id, pid}] = sessions
-  """
 
   @doc """
   Returns session statistics including total count and modules in use.
@@ -198,11 +197,11 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      iex> {:ok, pid} = Phoenix.SessionProcess.find_session("session_123")
+      iex> {:ok, pid} = Phoenix.SessionProcess.find_session("existing_session_id")
       iex> is_pid(pid)
       true
 
-      iex> {:error, :not_found} = Phoenix.SessionProcess.find_session("nonexistent")
+      iex> {:error, :not_found} = Phoenix.SessionProcess.find_session("nonexistent_session_id")
       iex> {:error, :not_found}
 
   ## Parameters
