@@ -143,7 +143,7 @@ defmodule Phoenix.SessionProcess do
   @spec list_sessions_by_module(module()) :: [binary()]
   def list_sessions_by_module(module) do
     Registry.select(Phoenix.SessionProcess.Registry, [
-      {{:"$1", :"$2", :_}, [], [{{:"$1", :"$2", :_}}]}
+      {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
     ])
     |> Enum.filter(fn {_session_id, _pid, mod} -> mod == module end)
     |> Enum.map(fn {session_id, _pid, _mod} -> session_id end)
