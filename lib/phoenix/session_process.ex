@@ -110,7 +110,7 @@ defmodule Phoenix.SessionProcess do
   @spec list_session() :: [{binary(), pid()}, ...]
   def list_session() do
     Registry.select(Phoenix.SessionProcess.Registry, [
-      {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
+      {{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}
     ])
   end
 
@@ -143,7 +143,7 @@ defmodule Phoenix.SessionProcess do
   @spec list_sessions_by_module(module()) :: [binary()]
   def list_sessions_by_module(module) do
     Registry.select(Phoenix.SessionProcess.Registry, [
-      {{:"$1", :"$2", :"$_"}, [], [{{:"$1", :"$2", :"$_"}}]}
+      {{:"$1", :"$2", :_}, [], [{{:"$1", :"$2", :_}}]}
     ])
     |> Enum.filter(fn {_session_id, _pid, mod} -> mod == module end)
     |> Enum.map(fn {session_id, _pid, _mod} -> session_id end)
@@ -209,7 +209,7 @@ defmodule Phoenix.SessionProcess do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [
-          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
@@ -231,7 +231,7 @@ defmodule Phoenix.SessionProcess do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [
-          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
