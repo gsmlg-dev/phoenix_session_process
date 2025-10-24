@@ -87,8 +87,8 @@ defmodule Phoenix.SessionProcess.Config do
       config :phoenix_session_process,
         session_process: MyApp.CustomSessionProcess
   """
-  @spec session_process() :: module()
-  def session_process() do
+  @spec session_process :: module()
+  def session_process do
     Application.get_env(:phoenix_session_process, :session_process, @default_session_process)
   end
 
@@ -114,8 +114,8 @@ defmodule Phoenix.SessionProcess.Config do
       config :phoenix_session_process,
         max_sessions: 50_000
   """
-  @spec max_sessions() :: integer()
-  def max_sessions() do
+  @spec max_sessions :: integer()
+  def max_sessions do
     Application.get_env(:phoenix_session_process, :max_sessions, @default_max_sessions)
   end
 
@@ -145,8 +145,8 @@ defmodule Phoenix.SessionProcess.Config do
 
   Sessions are automatically cleaned up after being idle for this duration.
   """
-  @spec session_ttl() :: integer()
-  def session_ttl() do
+  @spec session_ttl :: integer()
+  def session_ttl do
     Application.get_env(:phoenix_session_process, :session_ttl, @default_session_ttl)
   end
 
@@ -176,8 +176,8 @@ defmodule Phoenix.SessionProcess.Config do
 
   This helps prevent session creation abuse and protects against DoS attacks.
   """
-  @spec rate_limit() :: integer()
-  def rate_limit() do
+  @spec rate_limit :: integer()
+  def rate_limit do
     Application.get_env(:phoenix_session_process, :rate_limit, @default_rate_limit)
   end
 

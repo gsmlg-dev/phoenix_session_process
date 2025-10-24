@@ -68,8 +68,8 @@ defmodule Phoenix.SessionProcess.Helpers do
       iex> Phoenix.SessionProcess.Helpers.session_health()
       %{healthy: 10, crashed: 0, total: 10}
   """
-  @spec session_health() :: %{healthy: integer(), crashed: integer(), total: integer()}
-  def session_health() do
+  @spec session_health :: %{healthy: integer(), crashed: integer(), total: integer()}
+  def session_health do
     sessions = SessionProcess.list_session()
 
     {healthy, crashed} =

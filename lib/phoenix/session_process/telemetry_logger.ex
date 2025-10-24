@@ -38,6 +38,8 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
       ], &MyApp.SessionLogger.handle_event/4, nil)
   """
 
+  require Logger
+
   @type level :: :debug | :info | :warn | :error
 
   @doc """
@@ -57,8 +59,8 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
       [:phoenix, :session_process, :auto_cleanup],
       [:phoenix, :session_process, :cleanup],
       [:phoenix, :session_process, :cleanup_error]
-    ], fn _event, measurements, metadata ->
-      handle_default_event(_event, measurements, metadata, level)
+    ], fn event, measurements, metadata, _config ->
+      handle_default_event(event, measurements, metadata, level)
     end, %{level: level})
   end
 
@@ -72,8 +74,8 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     :telemetry.attach_many("phoenix-session-process-worker-logger", [
       [:phoenix, :session_process, :worker_start],
       [:phoenix, :session_process, :worker_terminate]
-    ], fn _event, measurements, metadata ->
-      handle_worker_event(_event, measurements, metadata, level)
+    ], fn event, measurements, metadata, _config ->
+      handle_worker_event(event, measurements, metadata, level)
     end, %{level: level})
   end
 
@@ -87,8 +89,8 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     :telemetry.attach_many("phoenix-session-process-session-logger", [
       [:phoenix, :session_process, :start],
       [:phoenix, :session_process, :stop]
-    ], fn _event, measurements, metadata ->
-      handle_session_event(_event, measurements, metadata, level)
+    ], fn event, measurements, metadata, _config ->
+      handle_session_event(event, measurements, metadata, level)
     end, %{level: level})
   end
 
@@ -106,8 +108,8 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
       [:phoenix, :session_process, :cast],
       [:phoenix, :session_process, :start_error],
       [:phoenix, :session_process, :communication_error]
-    ], fn _event, measurements, metadata ->
-      handle_communication_event(_event, measurements, metadata, level)
+    ], fn event, measurements, metadata, _config ->
+      handle_communication_event(event, measurements, metadata, level)
     end, %{level: level})
   end
 
@@ -122,16 +124,16 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
       [:phoenix, :session_process, :auto_cleanup],
       [:phoenix, :session_process, :cleanup],
       [:phoenix, :session_process, :cleanup_error]
-    ], fn _event, measurements, metadata ->
-      handle_cleanup_event(_event, measurements, metadata, level)
+    ], fn event, measurements, metadata, _config ->
+      handle_cleanup_event(event, measurements, metadata, level)
     end, %{level: level})
   end
 
   @doc """
   Detaches all telemetry logger handlers.
   """
-  @spec detach_all_loggers() :: :ok
-  def detach_all_loggers() do
+  @spec detach_all_loggers :: :ok
+  def detach_all_loggers do
     :telemetry.detach("phoenix-session-process-default-logger")
     :telemetry.detach("phoenix-session-process-worker-logger")
     :telemetry.detach("phoenix-session-process-session-logger")
@@ -141,9 +143,9 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
 
   # Private handler functions
 
-  defp handle_default_event(_event, measurements, metadata, level) do
+  defp handle_default_event(event, _measurements, metadata, level) do
     if should_log?(level, metadata) do
-      case _event do
+      case event do
         [:phoenix, :session_process, :start] ->
           session_id = Map.get(metadata, :session_id, "unknown")
           Logger.info("Session #{session_id} started")
@@ -273,9 +275,9 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     end
   end
 
-  defp should_log?(event_level, metadata) do
+  defp should_log?(_event_level, _metadata) do
     configured_level = Application.get_env(:phoenix_session_process, :telemetry_log_level, :info)
-    log_level_priority(configured_level) <= level_priority(:info)
+    level_priority(configured_level) <= level_priority(:info)
   end
 
   defp level_priority(:debug), do: 0

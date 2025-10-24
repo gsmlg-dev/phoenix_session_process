@@ -117,8 +117,8 @@ defmodule Phoenix.SessionProcess do
 
       # Returns list of {session_id, pid} tuples, or empty list if no sessions exist
   """
-  @spec list_session() :: [{binary(), pid()}, ...]
-  def list_session() do
+  @spec list_session :: [{binary(), pid()}, ...]
+  def list_session do
     Registry.select(Phoenix.SessionProcess.Registry, [
       {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
     ])
@@ -141,8 +141,8 @@ defmodule Phoenix.SessionProcess do
 
   - `%{count: integer(), modules: list(module())}` - A map containing the total number of active sessions and a list of unique session process modules.
   """
-  @spec session_info() :: %{count: integer(), modules: list(module())}
-  def session_info() do
+  @spec session_info :: %{count: integer(), modules: list(module())}
+  def session_info do
     sessions = list_session()
 
     modules =
@@ -245,12 +245,12 @@ defmodule Phoenix.SessionProcess do
     - `memory_usage` - Total memory usage in bytes for all session processes
     - `avg_memory_per_session` - Average memory usage per session in bytes
   """
-  @spec session_stats() :: %{
+  @spec session_stats :: %{
           total_sessions: integer(),
           memory_usage: integer(),
           avg_memory_per_session: integer()
         }
-  def session_stats() do
+  def session_stats do
     sessions = list_session()
     total_sessions = length(sessions)
 
@@ -287,7 +287,7 @@ defmodule Phoenix.SessionProcess do
         GenServer.start_link(__MODULE__, arg, name: name)
       end
 
-      def get_session_id() do
+      def get_session_id do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [
@@ -309,7 +309,7 @@ defmodule Phoenix.SessionProcess do
         GenServer.start_link(__MODULE__, args, name: name)
       end
 
-      def get_session_id() do
+      def get_session_id do
         current_pid = self()
 
         Registry.select(Phoenix.SessionProcess.Registry, [

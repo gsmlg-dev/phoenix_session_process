@@ -105,11 +105,11 @@ defmodule Phoenix.SessionProcess.Cleanup do
     {:noreply, state}
   end
 
-  defp schedule_cleanup() do
+  defp schedule_cleanup do
     Process.send_after(self(), :cleanup, @cleanup_interval)
   end
 
-  defp cleanup_expired_sessions() do
+  defp cleanup_expired_sessions do
     # This could be enhanced to track last activity
     # For now, sessions are cleaned up based on TTL from creation
     :ok

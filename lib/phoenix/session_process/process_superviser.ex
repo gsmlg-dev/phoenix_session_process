@@ -85,7 +85,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   # Automatically defines child_spec/1
   use DynamicSupervisor
 
-  alias Phoenix.SessionProcess.{Telemetry, Error}
+  alias Phoenix.SessionProcess.{Error, Telemetry}
 
   @doc """
   Starts the process supervisor.
@@ -432,7 +432,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
     end
   end
 
-  defp check_session_limits() do
+  defp check_session_limits do
     max_sessions = Phoenix.SessionProcess.Config.max_sessions()
     current_sessions = Registry.count(Phoenix.SessionProcess.Registry)
 
