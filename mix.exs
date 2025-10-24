@@ -72,7 +72,6 @@ defmodule Phoenix.SessionProcess.MixProject do
   defp docs do
     [
       name: "Phoenix.SessionProcess",
-      logo: "logo.png", # Optional: add logo if available
       source_ref: "v#{@version}",
       main: "readme",
       source_url: @source_url,
