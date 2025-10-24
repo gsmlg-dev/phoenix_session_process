@@ -283,6 +283,188 @@ defmodule MyApp.ComplexSessionProcess do
 end
 ```
 
+## State Management Options
+
+Phoenix.SessionProcess provides three approaches to manage session state, each suited for different use cases:
+
+### 1. Basic GenServer (Full Control)
+
+Use standard GenServer callbacks for complete control over state management:
+
+```elixir
+defmodule MyApp.BasicSessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init(_init_arg) do
+    {:ok, %{user_id: nil, data: %{}, timestamps: []}}
+  end
+
+  @impl true
+  def handle_call(:get_user, _from, state) do
+    {:reply, state.user_id, state}
+  end
+
+  @impl true
+  def handle_cast({:set_user, user_id}, state) do
+    {:noreply, %{state | user_id: user_id}}
+  end
+
+  @impl true
+  def handle_cast({:add_data, key, value}, state) do
+    new_data = Map.put(state.data, key, value)
+    {:noreply, %{state | data: new_data}}
+  end
+end
+```
+
+**Best for:** Custom logic, complex state transitions, performance-critical applications.
+
+### 2. Agent-Based State (Simple and Fast)
+
+Use `Phoenix.SessionProcess.State` for simple key-value storage with Agent:
+
+```elixir
+defmodule MyApp.AgentSessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init(_init_arg) do
+    {:ok, state_pid} = Phoenix.SessionProcess.State.start_link(%{
+      user: nil,
+      preferences: %{},
+      cart: []
+    })
+    {:ok, %{state: state_pid}}
+  end
+
+  @impl true
+  def handle_call(:get_user, _from, %{state: state_pid} = state) do
+    user = Phoenix.SessionProcess.State.get(state_pid, :user)
+    {:reply, user, state}
+  end
+
+  @impl true
+  def handle_cast({:set_user, user}, %{state: state_pid} = state) do
+    Phoenix.SessionProcess.State.put(state_pid, :user, user)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:add_to_cart, item}, %{state: state_pid} = state) do
+    cart = Phoenix.SessionProcess.State.get(state_pid, :cart)
+    Phoenix.SessionProcess.State.put(state_pid, :cart, [item | cart])
+    {:noreply, state}
+  end
+end
+```
+
+**Best for:** Simple state management, quick prototyping, lightweight applications.
+
+### 3. Redux-Style State (Predictable and Debuggable)
+
+Use `Phoenix.SessionProcess.Redux` for predictable state updates with actions and reducers:
+
+```elixir
+defmodule MyApp.ReduxSessionProcess do
+  use Phoenix.SessionProcess, :process
+  alias Phoenix.SessionProcess.Redux
+
+  @impl true
+  def init(_init_arg) do
+    initial_state = %{
+      user: nil,
+      preferences: %{},
+      cart: [],
+      activity_log: []
+    }
+
+    redux = Redux.init_state(initial_state, reducer: &reducer/2)
+    {:ok, %{redux: redux}}
+  end
+
+  # Define reducer to handle all state changes
+  def reducer(state, action) do
+    case action do
+      {:set_user, user} ->
+        %{state | user: user}
+
+      {:update_preferences, prefs} ->
+        %{state | preferences: Map.merge(state.preferences, prefs)}
+
+      {:add_to_cart, item} ->
+        %{state | cart: [item | state.cart]}
+
+      {:remove_from_cart, item_id} ->
+        cart = Enum.reject(state.cart, &(&1.id == item_id))
+        %{state | cart: cart}
+
+      :clear_cart ->
+        %{state | cart: []}
+
+      {:log_activity, activity} ->
+        log = [activity | state.activity_log]
+        %{state | activity_log: log}
+
+      :reset ->
+        %{user: nil, preferences: %{}, cart: [], activity_log: []}
+
+      _ ->
+        state
+    end
+  end
+
+  @impl true
+  def handle_call(:get_state, _from, %{redux: redux} = state) do
+    current_state = Redux.current_state(redux)
+    {:reply, current_state, state}
+  end
+
+  @impl true
+  def handle_call(:get_history, _from, %{redux: redux} = state) do
+    history = Redux.history(redux)
+    {:reply, history, state}
+  end
+
+  @impl true
+  def handle_cast({:dispatch, action}, %{redux: redux} = state) do
+    new_redux = Redux.dispatch(redux, action)
+    {:noreply, %{state | redux: new_redux}}
+  end
+end
+
+# Usage
+Phoenix.SessionProcess.start("session_123", MyApp.ReduxSessionProcess)
+Phoenix.SessionProcess.cast("session_123", {:dispatch, {:set_user, %{id: 1, name: "Alice"}}})
+Phoenix.SessionProcess.cast("session_123", {:dispatch, {:add_to_cart, %{id: 101, name: "Widget", price: 29.99}}})
+
+{:ok, state} = Phoenix.SessionProcess.call("session_123", :get_state)
+{:ok, history} = Phoenix.SessionProcess.call("session_123", :get_history)
+```
+
+**Redux Features:**
+- **Time-travel debugging** - Access complete action history
+- **Middleware support** - Add logging, validation, side effects
+- **State persistence** - Serialize and restore state
+- **Predictable updates** - All changes through explicit actions
+- **Developer tools** - Inspect actions and state changes
+
+**Best for:** Complex applications, team collaboration, debugging requirements, state persistence needs.
+
+### Comparison
+
+| Feature | Basic GenServer | Agent State | Redux |
+|---------|----------------|-------------|-------|
+| Complexity | Low | Very Low | Medium |
+| Performance | Excellent | Excellent | Good |
+| Debugging | Manual | Manual | Built-in |
+| Time-travel | No | No | Yes |
+| Middleware | Manual | No | Yes |
+| State History | No | No | Yes |
+| Learning Curve | Low | Very Low | Medium |
+
+See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed Redux migration guide and examples.
+
 ## Configuration Options
 
 | Option | Default | Description |

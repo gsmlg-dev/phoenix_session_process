@@ -2,6 +2,8 @@
 
 This guide helps you migrate from traditional state management to Redux-style state management with actions and reducers.
 
+> **Note**: Phoenix.SessionProcess offers three state management approaches. See the [State Management Options](README.md#state-management-options) section in the README for a complete comparison and to choose the right approach for your needs.
+
 ## Overview
 
 The Redux-style state management provides:
@@ -10,6 +12,18 @@ The Redux-style state management provides:
 - **Middleware support** for logging, validation, and side effects
 - **State persistence** and replay capabilities
 - **Better debugging** with action logging
+
+## When to Use Redux
+
+Consider migrating to Redux when you need:
+
+1. **Complex State Logic** - Multiple related state changes that need to be coordinated
+2. **Debugging Support** - Need to trace state changes and replay actions
+3. **Team Collaboration** - Multiple developers working on the same session logic
+4. **State Persistence** - Need to serialize and restore state (e.g., session recovery)
+5. **Audit Trail** - Requirement to track all state changes for compliance
+
+For simpler use cases, consider using the [Agent-Based State](README.md#2-agent-based-state-simple-and-fast) approach instead.
 
 ## Quick Migration Steps
 
@@ -260,10 +274,10 @@ defmodule MyApp.SessionTestHelpers do
 
   defp simulate_new_state(module, initial_state, actions) do
     redux = Redux.init_state(initial_state)
-    Enum.reduce(actions, redux, fn action, acc ->
+    final_redux = Enum.reduce(actions, redux, fn action, acc ->
       Redux.dispatch(acc, action, &module.reducer/2)
     end)
-    Redux.current_state(new_redux)
+    Redux.current_state(final_redux)
   end
 end
 ```
