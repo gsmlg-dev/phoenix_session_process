@@ -315,9 +315,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
     :exit, {:timeout, _} ->
       duration = System.monotonic_time() - start_time
 
-      Telemetry.emit_communication_error(session_id, module, :call, :timeout,
-        duration: duration
-      )
+      Telemetry.emit_communication_error(session_id, module, :call, :timeout, duration: duration)
 
       Error.timeout(timeout)
 

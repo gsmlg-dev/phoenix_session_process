@@ -119,6 +119,7 @@ defmodule Phoenix.SessionProcessTest do
       session_id2 = SessionId.generate_unique_session_id()
 
       {:ok, _pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
+
       {:ok, _pid2} =
         SessionProcess.start(session_id2, TestProcessLink, %{value: 2})
 
@@ -152,6 +153,7 @@ defmodule Phoenix.SessionProcessTest do
       session_id2 = SessionId.generate_unique_session_id()
 
       {:ok, _pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
+
       {:ok, _pid2} =
         SessionProcess.start(session_id2, TestProcessLink, %{value: 2})
 
