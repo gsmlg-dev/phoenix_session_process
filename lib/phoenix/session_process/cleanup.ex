@@ -1,6 +1,75 @@
 defmodule Phoenix.SessionProcess.Cleanup do
   @moduledoc """
-  Automatic session cleanup with TTL support.
+  Automatic session cleanup process with TTL (Time-To-Live) support.
+
+  This GenServer runs in the background and periodically cleans up expired session
+  processes based on their last activity time. This prevents memory leaks from abandoned
+  sessions and ensures efficient resource utilization.
+
+  ## How It Works
+
+  ### Cleanup Strategy
+  - Runs cleanup tasks every 60 seconds (`@cleanup_interval`)
+  - Checks all active session processes for expiration
+  - Terminates sessions that have exceeded their TTL
+  - Emits telemetry events for monitoring cleanup operations
+
+  ### TTL Calculation
+  Each session process tracks its last activity timestamp. The cleanup process:
+  1. Gets the configured TTL from `Phoenix.SessionProcess.Config.session_ttl()`
+  2. Calculates the expiration threshold (current_time - TTL)
+  3. Compares each session's last activity against the threshold
+  4. Terminates sessions that have been inactive longer than TTL
+
+  ## Configuration
+
+  The cleanup process respects the TTL configuration:
+
+      config :phoenix_session_process,
+        session_ttl: :timer.hours(2)  # Sessions expire after 2 hours
+
+  ## Performance Considerations
+
+  ### Memory Efficiency
+  - Prevents memory accumulation from abandoned sessions
+  - Releases resources back to the system
+  - Maintains optimal memory usage patterns
+
+  ### Performance Impact
+  - Cleanup runs in the background without blocking requests
+  - Uses efficient registry operations for session discovery
+  - Minimal impact on active session performance
+
+  ### Scalability
+  - Handles thousands of concurrent sessions efficiently
+  - Cleanup time scales linearly with active session count
+  - Can be tuned for different deployment scales
+
+  ## Telemetry
+
+  The cleanup process emits several telemetry events:
+
+  - `[:phoenix, :session_process, :cleanup]` - Cleanup cycle completed
+  - `[:phoenix, :session_process, :cleanup_error]` - Cleanup operation failed
+  - `[:phoenix, :session_process, :session_expired]` - Individual session expired
+
+  ## Monitoring
+
+  You can monitor cleanup performance through telemetry events.
+  See the Telemetry section above for available events.
+
+  Example handler setup is documented in the telemetry module.
+
+  ## Error Handling
+
+  - Session process termination failures are logged but don't stop cleanup
+  - Registry lookup errors are handled gracefully
+  - Continuous operation ensures consistent cleanup performance
+
+  ## Integration
+
+  This process is automatically started by the top-level supervisor and requires
+  no manual intervention or configuration beyond setting the desired TTL.
   """
   use GenServer
   require Logger
@@ -28,7 +97,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
     if Phoenix.SessionProcess.ProcessSupervisor.session_process_started?(session_id) do
-      Logger.debug("Auto-cleanup expired session: #{session_id}")
+      session_pid = Phoenix.SessionProcess.ProcessSupervisor.session_process_pid(session_id)
+      Phoenix.SessionProcess.Telemetry.emit_auto_cleanup_event(session_id, Phoenix.SessionProcess.Helpers.get_session_module(session_pid), session_pid)
       Phoenix.SessionProcess.terminate(session_id)
     end
 

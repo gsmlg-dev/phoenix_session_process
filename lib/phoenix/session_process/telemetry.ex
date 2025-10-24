@@ -19,14 +19,24 @@ defmodule Phoenix.SessionProcess.Telemetry do
   - `[:phoenix, :session_process, :cast]` - When a cast is made to a session
   - `[:phoenix, :session_process, :communication_error]` - When communication fails
 
+  ### Process Management
+  - `[:phoenix, :session_process, :worker_start]` - When a worker process starts
+  - `[:phoenix, :session_process, :worker_terminate]` - When a worker process terminates
+  - `[:phoenix, :session_process, :session_start]` - When a session process starts
+  - `[:phoenix, :session_process, :session_end]` - When a session process ends
+
   ### Cleanup
+  - `[:phoenix, :session_process, :auto_cleanup]` - When a session is auto-cleaned up
   - `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
   - `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
 
   All events include the following metadata:
-  - `session_id` - The session ID
+  - `session_id` - The session ID (when applicable)
   - `module` - The session module
   - `pid` - The process PID (when applicable)
+  - `worker_spec` - Worker specification details (for worker events)
+  - `operation` - Operation type (for error events)
+  - `reason` - Error reason (for error events)
   - `measurements` - Performance measurements
   """
 
@@ -170,5 +180,65 @@ defmodule Phoenix.SessionProcess.Telemetry do
 
         :erlang.raise(kind, reason, __STACKTRACE__)
     end
+  end
+
+  @doc """
+  Emits a telemetry event for worker process start.
+  """
+  @spec emit_worker_start(term(), keyword()) :: :ok
+  def emit_worker_start(worker_spec, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :worker_start],
+      Map.new(measurements),
+      %{worker_spec: inspect(worker_spec)}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for worker process termination.
+  """
+  @spec emit_worker_terminate(pid(), keyword()) :: :ok
+  def emit_worker_terminate(pid, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :worker_terminate],
+      Map.new(measurements),
+      %{pid: pid}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for session process start.
+  """
+  @spec emit_session_start_event(String.t(), atom(), pid(), keyword()) :: :ok
+  def emit_session_start_event(session_id, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :session_start],
+      Map.new(measurements),
+      %{session_id: session_id}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for session process end.
+  """
+  @spec emit_session_end_event(String.t(), atom(), pid(), keyword()) :: :ok
+  def emit_session_end_event(session_id, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :session_end],
+      Map.new(measurements),
+      %{session_id: session_id}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for automatic session cleanup.
+  """
+  @spec emit_auto_cleanup_event(String.t(), atom(), pid(), keyword()) :: :ok
+  def emit_auto_cleanup_event(session_id, module, pid, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :auto_cleanup],
+      Map.new(measurements),
+      %{session_id: session_id, module: module, pid: pid}
+    )
   end
 end

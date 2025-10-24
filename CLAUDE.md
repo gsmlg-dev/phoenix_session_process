@@ -20,11 +20,21 @@ This is Phoenix.SessionProcess, an Elixir library that creates a process for eac
 ### Testing
 The test suite uses ExUnit. Tests are located in the `test/` directory. The test helper (test/test_helper.exs:3) automatically starts the supervisor.
 
+### Development Environment
+The project uses `devenv` for development environment setup with Nix. Key configuration:
+- Uses Elixir/BEAM 27
+- Runs `hello` script on shell entry for greeting
+- Includes git, figlet, and lolcat tools
+
 ### Benchmarking
-- `mix run bench/simple_bench.exs` - Quick performance test (5-10 seconds)
+Performance testing available via:
+- `mix run bench/simple_bench.exs` - Quick benchmark (5-10 seconds)
 - `mix run bench/session_benchmark.exs` - Comprehensive benchmark (30-60 seconds)
 
-Expected performance: >10,000 sessions/sec creation, ~10KB per session memory usage, >100,000 registry lookups/sec.
+Expected performance:
+- Session Creation: 10,000+ sessions/sec
+- Memory Usage: ~10KB per session
+- Registry Lookups: 100,000+ lookups/sec
 
 ## Architecture
 
@@ -92,6 +102,12 @@ config :phoenix_session_process,
   rate_limit: 100                    # Sessions per minute limit
 ```
 
+Configuration options:
+- `session_process`: Default module for session processes (defaults to `Phoenix.SessionProcess.DefaultSessionProcess`)
+- `max_sessions`: Maximum concurrent sessions (defaults to 10,000)
+- `session_ttl`: Session TTL in milliseconds (defaults to 1 hour)
+- `rate_limit`: Sessions per minute limit (defaults to 100)
+
 ## Usage in Phoenix Applications
 
 1. Add supervisor to application supervision tree
@@ -108,11 +124,26 @@ The library provides three state management approaches:
 2. **Phoenix.SessionProcess.State** - Agent-based with simple get/put and Redux dispatch
 3. **Phoenix.SessionProcess.Redux** - Full Redux pattern with actions, reducers, middleware, time-travel debugging
 
-## Telemetry Events
+## Telemetry and Error Handling
 
-All operations emit telemetry events under `[:phoenix, :session_process, ...]`:
-- `:start`, `:stop`, `:start_error` - Session lifecycle
-- `:call`, `:cast`, `:communication_error` - Communication
-- `:cleanup`, `:cleanup_error` - Cleanup operations
+### Telemetry Events
+The library emits comprehensive telemetry events for monitoring:
+- `[:phoenix, :session_process, :start]` - Session starts
+- `[:phoenix, :session_process, :stop]` - Session stops
+- `[:phoenix, :session_process, :start_error]` - Session start errors
+- `[:phoenix, :session_process, :call]` - Call operations
+- `[:phoenix, :session_process, :cast]` - Cast operations
+- `[:phoenix, :session_process, :communication_error]` - Communication errors
+- `[:phoenix, :session_process, :cleanup]` - Session cleanup
+- `[:phoenix, :session_process, :cleanup_error]` - Cleanup errors
 
 Events include metadata (session_id, module, pid) and measurements (duration in native time units).
+
+### Error Types
+Common error responses:
+- `{:error, {:invalid_session_id, session_id}}` - Invalid session ID format
+- `{:error, {:session_limit_reached, max_sessions}}` - Maximum sessions exceeded
+- `{:error, {:session_not_found, session_id}}` - Session doesn't exist
+- `{:error, {:timeout, timeout}}` - Operation timed out
+
+Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.

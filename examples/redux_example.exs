@@ -43,6 +43,7 @@ IO.inspect(Redux.current_state(redux), label: "State after time travel")
 
 # 3. Middleware example
 IO.puts("\n3. Middleware Example")
+
 logger_middleware = fn action, state, next ->
   IO.puts("[LOG] Action: #{inspect(action)}")
   IO.puts("[LOG] Before: #{inspect(state)}")
@@ -51,8 +52,9 @@ logger_middleware = fn action, state, next ->
   new_state
 end
 
-redux_with_middleware = Redux.init_state(%{count: 0})
-|> Redux.add_middleware(logger_middleware)
+redux_with_middleware =
+  Redux.init_state(%{count: 0})
+  |> Redux.add_middleware(logger_middleware)
 
 redux_with_middleware = Redux.dispatch(redux_with_middleware, {:increment, 10}, reducer)
 

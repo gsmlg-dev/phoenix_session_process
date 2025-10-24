@@ -17,7 +17,12 @@ defmodule Phoenix.SessionProcess.MixProject do
         files: ["lib", "mix.exs", "README*", "LICENSE*", "CHANGELOG*"],
         maintainers: ["Jonathan Gao"],
         licenses: ["MIT"],
-        links: %{"GitHub" => @source_url}
+        links: %{
+          "GitHub" => @source_url,
+          "Documentation" => "https://hexdocs.pm/phoenix_session_process",
+          "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
+        },
+        description: "Session isolation and state management for Phoenix applications"
       ],
       deps: deps(),
       docs: docs()
@@ -45,16 +50,69 @@ defmodule Phoenix.SessionProcess.MixProject do
 
   defp description do
     """
-    Tool for create process for each user session in Phoenix.
+    Phoenix.SessionProcess creates a dedicated process for each user session in Phoenix applications.
+
+    This library provides session isolation, state management, and automatic cleanup with TTL support.
+    Each user session runs in its own GenServer process, enabling real-time session state
+    without external dependencies like Redis or databases.
+
+    Key features:
+    - Session isolation with dedicated GenServer processes
+    - Automatic cleanup with configurable TTL
+    - LiveView integration for reactive UIs
+    - High performance (10,000+ sessions/second)
+    - Built-in telemetry and monitoring
+    - Zero external dependencies beyond core Phoenix/OTP
     """
   end
 
   defp docs do
     [
-      extras: ["CHANGELOG.md", "README.md"],
-      source_url: @source_url,
+      name: "Phoenix.SessionProcess",
+      logo: "logo.png", # Optional: add logo if available
       source_ref: "v#{@version}",
       main: "readme",
+      source_url: @source_url,
+      homepage_url: @source_url,
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE"
+      ],
+      groups_for_extras: [
+        "Guides": [
+          "README.md"
+        ],
+        "Reference": [
+          "CHANGELOG.md",
+          "LICENSE"
+        ]
+      ],
+      groups_for_modules: [
+        "Core API": [
+          Phoenix.SessionProcess,
+          Phoenix.SessionProcess.SessionId
+        ],
+        "Configuration": [
+          Phoenix.SessionProcess.Config
+        ],
+        "Error Handling": [
+          Phoenix.SessionProcess.Error
+        ],
+        "Internals": [
+          Phoenix.SessionProcess.Supervisor,
+          Phoenix.SessionProcess.ProcessSupervisor,
+          Phoenix.SessionProcess.Cleanup,
+          Phoenix.SessionProcess.DefaultSessionProcess
+        ],
+        "Utilities": [
+          Phoenix.SessionProcess.Helpers,
+          Phoenix.SessionProcess.Telemetry,
+          Phoenix.SessionProcess.State,
+          Phoenix.SessionProcess.Redux,
+          Phoenix.SessionProcess.MigrationExamples
+        ]
+      ],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
     ]
   end

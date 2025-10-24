@@ -1,17 +1,32 @@
 # Phoenix.SessionProcess
 
-Create a process for each user session, all user requests go through this process. This provides session isolation, state management, and automatic cleanup with TTL support.
+[![Hex Version](https://img.shields.io/hexpm/v/phoenix_session_process.svg)](https://hex.pm/packages/phoenix_session_process)
+[![Hex Docs](https://img.shields.io/badge/docs-hexpm-blue.svg)](https://hexdocs.pm/phoenix_session_process/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-* [Github Repo](https://github.com/gsmlg-dev/phoenix_session_process)
+A powerful Phoenix library that creates a dedicated process for each user session. All user requests go through their dedicated session process, providing complete session isolation, robust state management, and automatic cleanup with TTL support.
+
+## Why Phoenix.SessionProcess?
+
+Traditional session management stores session data in external stores (Redis, database) or relies on plug-based state. **Phoenix.SessionProcess** takes a different approach by giving each user their own GenServer process, enabling:
+
+- **Real-time session state** without external dependencies
+- **Perfect session isolation** - no shared state between users
+- **Built-in LiveView integration** for reactive UIs
+- **Automatic memory management** with configurable TTL
+- **Enterprise-grade performance** - 10,000+ sessions/second
+- **Zero external dependencies** beyond core Phoenix/OTP
 
 ## Features
 
 - **Session Isolation**: Each user session runs in its own GenServer process
-- **Automatic Cleanup**: TTL-based automatic session cleanup
-- **Configuration Management**: Configurable TTL, session limits, and rate limiting
+- **Automatic Cleanup**: TTL-based automatic session cleanup and memory management
 - **LiveView Integration**: Built-in support for monitoring LiveView processes
+- **High Performance**: Optimized for 10,000+ concurrent sessions
+- **Configuration Management**: Configurable TTL, session limits, and rate limiting
 - **Extensible**: Custom session process modules with full GenServer support
-- **Validation**: Session ID validation and concurrent session limits
+- **Comprehensive Monitoring**: Built-in telemetry and performance metrics
+- **Error Handling**: Detailed error reporting and human-readable messages
 
 ## Installation
 
@@ -24,6 +39,12 @@ def deps do
   ]
 end
 ```
+
+### Requirements
+
+- Elixir 1.14+
+- Erlang/OTP 24+
+- Phoenix 1.6+ (recommended)
 
 ## Quick Start
 
@@ -197,15 +218,67 @@ sessions = Phoenix.SessionProcess.list_session()
 
 ### Session Process Helpers
 
-Inside your session process, use:
+Access session information from within your process:
 
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
 
-  def get_session_id() do
-    # Returns the session ID for this process
+  @impl true
+  def init(_init_arg) do
+    # Get the current session ID
+    session_id = get_session_id()
+    {:ok, %{session_id: session_id, data: %{}}}
+  end
+
+  def get_current_session_id() do
     get_session_id()
+  end
+end
+```
+
+### Advanced Usage
+
+#### Rate Limiting
+The library includes built-in rate limiting to prevent session abuse:
+
+```elixir
+# Configure rate limiting (100 sessions per minute by default)
+config :phoenix_session_process,
+  rate_limit: 200,  # 200 sessions per minute
+  max_sessions: 20_000  # Maximum concurrent sessions
+```
+
+#### Custom Session State
+Store complex data structures and implement custom logic:
+
+```elixir
+defmodule MyApp.ComplexSessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init(_init_arg) do
+    {:ok, %{
+      user: nil,
+      shopping_cart: [],
+      preferences: %{},
+      activity_log: []
+    }}
+  end
+
+  @impl true
+  def handle_cast({:add_to_cart, item}, state) do
+    new_cart = [item | state.shopping_cart]
+    new_state = %{state | shopping_cart: new_cart}
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_call(:get_cart_total, _from, state) do
+    total = state.shopping_cart
+      |> Enum.map(& &1.price)
+      |> Enum.sum()
+    {:reply, total, state}
   end
 end
 ```
@@ -332,6 +405,33 @@ mix run bench/session_benchmark.exs
 
 See `bench/README.md` for detailed benchmarking guide and customization options.
 
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+1. Fork the repository
+2. Install dependencies: `mix deps.get`
+3. Run tests: `mix test`
+4. Run benchmarks: `mix run bench/simple_bench.exs`
+
+The project uses `devenv` for development environment management. After installation, run `devenv shell` to enter the development environment.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
+
 ## License
 
 [MIT License](LICENSE)
+
+## Credits
+
+Created by [Jonathan Gao](https://github.com/gsmlg-dev)
+
+## Related Projects
+
+- [Phoenix LiveView](https://hex.pm/packages/phoenix_live_view) - Real-time user experiences
+- [Phoenix PubSub](https://hex.pm/packages/phoenix_pubsub) - Distributed PubSub
+- [Phoenix Channels](https://hexdocs.pm/phoenix/channels.html) - Real-time communication

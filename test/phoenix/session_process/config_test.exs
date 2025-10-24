@@ -14,7 +14,7 @@ defmodule Phoenix.SessionProcess.ConfigTest do
         end
       end)
 
-      assert Config.session_process() == Phoenix.SessionProcess.Config.DefaultSessionProcess
+      assert Config.session_process() == Phoenix.SessionProcess.DefaultSessionProcess
     end
 
     test "returns configured session process when set" do
