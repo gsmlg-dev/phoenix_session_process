@@ -484,22 +484,8 @@ defmodule Phoenix.SessionProcess do
   def session_stats do
     sessions = list_session()
     total_sessions = length(sessions)
-
-    memory_usage =
-      if total_sessions > 0 do
-        sessions
-        |> Enum.map(fn {_session_id, pid} ->
-          case :erlang.process_info(pid, :memory) do
-            {:memory, memory} -> memory
-            _ -> 0
-          end
-        end)
-        |> Enum.sum()
-      else
-        0
-      end
-
-    avg_memory = if total_sessions > 0, do: div(memory_usage, total_sessions), else: 0
+    memory_usage = calculate_total_memory(sessions)
+    avg_memory = calculate_average_memory(memory_usage, total_sessions)
 
     %{
       total_sessions: total_sessions,
@@ -507,6 +493,24 @@ defmodule Phoenix.SessionProcess do
       avg_memory_per_session: avg_memory
     }
   end
+
+  defp calculate_total_memory([]), do: 0
+
+  defp calculate_total_memory(sessions) do
+    sessions
+    |> Enum.map(&get_process_memory/1)
+    |> Enum.sum()
+  end
+
+  defp get_process_memory({_session_id, pid}) do
+    case :erlang.process_info(pid, :memory) do
+      {:memory, memory} -> memory
+      _ -> 0
+    end
+  end
+
+  defp calculate_average_memory(_memory, 0), do: 0
+  defp calculate_average_memory(memory, total), do: div(memory, total)
 
   defmacro __using__(:process) do
     quote do

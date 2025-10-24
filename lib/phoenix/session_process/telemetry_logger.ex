@@ -145,53 +145,61 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
 
   defp handle_default_event(event, _measurements, metadata, level) do
     if should_log?(level, metadata) do
-      case event do
-        [:phoenix, :session_process, :start] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          Logger.info("Session #{session_id} started")
-
-        [:phoenix, :session_process, :stop] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          Logger.info("Session #{session_id} stopped")
-
-        [:phoenix, :session_process, :start_error] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          reason = Map.get(metadata, :reason, "unknown")
-          Logger.error("Session start error #{session_id}: #{inspect(reason)}")
-
-        [:phoenix, :session_process, :communication_error] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          reason = Map.get(metadata, :reason, "unknown")
-          Logger.error("Session communication error #{session_id}: #{inspect(reason)}")
-
-        [:phoenix, :session_process, :call] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          message = Map.get(metadata, :message, "unknown")
-          Logger.info("Session call #{session_id}: #{inspect(message)}")
-
-        [:phoenix, :session_process, :cast] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          message = Map.get(metadata, :message, "unknown")
-          Logger.info("Session cast #{session_id}: #{inspect(message)}")
-
-        [:phoenix, :session_process, :auto_cleanup] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          Logger.debug("Auto-cleanup expired session: #{session_id}")
-
-        [:phoenix, :session_process, :cleanup] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          Logger.debug("Cleanup session: #{session_id}")
-
-        [:phoenix, :session_process, :cleanup_error] ->
-          session_id = Map.get(metadata, :session_id, "unknown")
-          reason = Map.get(metadata, :reason, "unknown")
-          Logger.error("Cleanup error #{session_id}: #{inspect(reason)}")
-
-        _ ->
-          :ok
-      end
+      log_event(event, metadata)
     end
   end
+
+  defp log_event([:phoenix, :session_process, :start], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    Logger.info("Session #{session_id} started")
+  end
+
+  defp log_event([:phoenix, :session_process, :stop], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    Logger.info("Session #{session_id} stopped")
+  end
+
+  defp log_event([:phoenix, :session_process, :start_error], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    reason = Map.get(metadata, :reason, "unknown")
+    Logger.error("Session start error #{session_id}: #{inspect(reason)}")
+  end
+
+  defp log_event([:phoenix, :session_process, :communication_error], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    reason = Map.get(metadata, :reason, "unknown")
+    Logger.error("Session communication error #{session_id}: #{inspect(reason)}")
+  end
+
+  defp log_event([:phoenix, :session_process, :call], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    message = Map.get(metadata, :message, "unknown")
+    Logger.info("Session call #{session_id}: #{inspect(message)}")
+  end
+
+  defp log_event([:phoenix, :session_process, :cast], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    message = Map.get(metadata, :message, "unknown")
+    Logger.info("Session cast #{session_id}: #{inspect(message)}")
+  end
+
+  defp log_event([:phoenix, :session_process, :auto_cleanup], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    Logger.debug("Auto-cleanup expired session: #{session_id}")
+  end
+
+  defp log_event([:phoenix, :session_process, :cleanup], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    Logger.debug("Cleanup session: #{session_id}")
+  end
+
+  defp log_event([:phoenix, :session_process, :cleanup_error], metadata) do
+    session_id = Map.get(metadata, :session_id, "unknown")
+    reason = Map.get(metadata, :reason, "unknown")
+    Logger.error("Cleanup error #{session_id}: #{inspect(reason)}")
+  end
+
+  defp log_event(_event, _metadata), do: :ok
 
   defp handle_worker_event([:phoenix, :session_process, :worker_start], _measurements, metadata, level) do
     if should_log?(level, metadata) do
