@@ -1,6 +1,6 @@
 defmodule Phoenix.SessionProcess.StateTest do
   use ExUnit.Case, async: true
-  alias Phoenix.SessionProcess.State
+  alias Phoenix.SessionProcess.{Redux, State}
 
   describe "start_link/1" do
     test "starts with default state" do
@@ -199,14 +199,14 @@ defmodule Phoenix.SessionProcess.StateTest do
       {:ok, pid} = State.start_link(%{redux: nil})
 
       # This tests the interaction pattern
-      redux = Phoenix.SessionProcess.Redux.init_state(%{count: 0})
+      redux = Redux.init_state(%{count: 0})
       reducer = fn state, {:increment, val} -> %{state | count: state.count + val} end
 
-      new_redux = Phoenix.SessionProcess.Redux.dispatch(redux, {:increment, 5}, reducer)
+      new_redux = Redux.dispatch(redux, {:increment, 5}, reducer)
       State.update_state(pid, fn _ -> %{redux: new_redux} end)
 
       state = State.get_state(pid)
-      assert Phoenix.SessionProcess.Redux.current_state(state.redux).count == 5
+      assert Redux.current_state(state.redux).count == 5
     end
   end
 end

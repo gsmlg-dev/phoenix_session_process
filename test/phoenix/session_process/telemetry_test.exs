@@ -2,7 +2,7 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
   use ExUnit.Case, async: false
 
   alias Phoenix.SessionProcess
-  alias Phoenix.SessionProcess.{Telemetry, Error}
+  alias Phoenix.SessionProcess.{Error, Telemetry}
 
   test "telemetry events are emitted for session lifecycle" do
     session_id = "telemetry_test_session"

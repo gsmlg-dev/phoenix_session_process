@@ -1,12 +1,12 @@
-defmodule TestProcess do
+defmodule TestProcessLink do
   @moduledoc """
-  Test helper module for session process testing.
+  Test helper module for session process with LiveView link testing.
 
-  This module provides a simple session process implementation used in tests
-  to verify session process functionality, state management, and lifecycle operations.
+  This module provides a session process implementation using the :process_link
+  option to verify LiveView monitoring functionality and get_session_id behavior.
   """
 
-  use Phoenix.SessionProcess, :process
+  use Phoenix.SessionProcess, :process_link
 
   alias Phoenix.SessionProcess.State
 

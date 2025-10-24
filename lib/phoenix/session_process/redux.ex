@@ -274,7 +274,7 @@ defmodule Phoenix.SessionProcess.Redux do
   @doc """
   Create a middleware for logging actions.
   """
-  @spec logger_middleware() :: middleware()
+  @spec logger_middleware :: middleware()
   def logger_middleware do
     fn action, state, next ->
       IO.puts("[Redux] Action: #{inspect(action)}")

@@ -209,7 +209,7 @@ defmodule Phoenix.SessionProcess.Telemetry do
   @doc """
   Emits a telemetry event for session process start.
   """
-  @spec emit_session_start_event(String.t(), atom(), pid(), keyword()) :: :ok
+  @spec emit_session_start_event(String.t(), keyword()) :: :ok
   def emit_session_start_event(session_id, measurements \\ []) do
     :telemetry.execute(
       [:phoenix, :session_process, :session_start],
@@ -221,7 +221,7 @@ defmodule Phoenix.SessionProcess.Telemetry do
   @doc """
   Emits a telemetry event for session process end.
   """
-  @spec emit_session_end_event(String.t(), atom(), pid(), keyword()) :: :ok
+  @spec emit_session_end_event(String.t(), keyword()) :: :ok
   def emit_session_end_event(session_id, measurements \\ []) do
     :telemetry.execute(
       [:phoenix, :session_process, :session_end],

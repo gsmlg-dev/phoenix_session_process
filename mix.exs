@@ -25,7 +25,8 @@ defmodule Phoenix.SessionProcess.MixProject do
         description: "Session isolation and state management for Phoenix applications"
       ],
       deps: deps(),
-      docs: docs()
+      docs: docs(),
+      aliases: aliases()
     ]
   end
 
@@ -41,7 +42,9 @@ defmodule Phoenix.SessionProcess.MixProject do
     [
       {:plug, "~> 1.0"},
       {:telemetry, "~> 1.0"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -69,7 +72,6 @@ defmodule Phoenix.SessionProcess.MixProject do
   defp docs do
     [
       name: "Phoenix.SessionProcess",
-      logo: "logo.png", # Optional: add logo if available
       source_ref: "v#{@version}",
       main: "readme",
       source_url: @source_url,
@@ -80,10 +82,10 @@ defmodule Phoenix.SessionProcess.MixProject do
         "LICENSE"
       ],
       groups_for_extras: [
-        "Guides": [
+        Guides: [
           "README.md"
         ],
-        "Reference": [
+        Reference: [
           "CHANGELOG.md",
           "LICENSE"
         ]
@@ -93,19 +95,19 @@ defmodule Phoenix.SessionProcess.MixProject do
           Phoenix.SessionProcess,
           Phoenix.SessionProcess.SessionId
         ],
-        "Configuration": [
+        Configuration: [
           Phoenix.SessionProcess.Config
         ],
         "Error Handling": [
           Phoenix.SessionProcess.Error
         ],
-        "Internals": [
+        Internals: [
           Phoenix.SessionProcess.Supervisor,
           Phoenix.SessionProcess.ProcessSupervisor,
           Phoenix.SessionProcess.Cleanup,
           Phoenix.SessionProcess.DefaultSessionProcess
         ],
-        "Utilities": [
+        Utilities: [
           Phoenix.SessionProcess.Helpers,
           Phoenix.SessionProcess.Telemetry,
           Phoenix.SessionProcess.State,
@@ -114,6 +116,12 @@ defmodule Phoenix.SessionProcess.MixProject do
         ]
       ],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: ["credo --strict", "dialyzer"]
     ]
   end
 end

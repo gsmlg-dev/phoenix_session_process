@@ -1,4 +1,3 @@
-{ pkgs, lib, config, inputs, ... }:
 
 let
   pkgs-stable = import inputs.nixpkgs-stable { system = pkgs.stdenv.system; };

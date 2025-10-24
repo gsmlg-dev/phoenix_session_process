@@ -7,6 +7,8 @@ defmodule Phoenix.SessionProcess.Helpers do
   """
 
   alias Phoenix.SessionProcess
+  alias Phoenix.SessionProcess.Config
+  alias Phoenix.SessionProcess.Registry, as: SessionRegistry
 
   @doc """
   Start sessions for multiple session IDs in parallel.
@@ -68,8 +70,8 @@ defmodule Phoenix.SessionProcess.Helpers do
       iex> Phoenix.SessionProcess.Helpers.session_health()
       %{healthy: 10, crashed: 0, total: 10}
   """
-  @spec session_health() :: %{healthy: integer(), crashed: integer(), total: integer()}
-  def session_health() do
+  @spec session_health :: %{healthy: integer(), crashed: integer(), total: integer()}
+  def session_health do
     sessions = SessionProcess.list_session()
 
     {healthy, crashed} =
@@ -183,9 +185,9 @@ defmodule Phoenix.SessionProcess.Helpers do
   """
   @spec get_session_module(pid()) :: module()
   def get_session_module(pid) do
-    case Registry.lookup(Phoenix.SessionProcess.Registry, pid) do
+    case Registry.lookup(SessionRegistry, pid) do
       [{_, module}] -> module
-      _ -> Phoenix.SessionProcess.Config.session_process()
+      _ -> Config.session_process()
     end
   end
 end
