@@ -25,7 +25,8 @@ defmodule Phoenix.SessionProcess.MixProject do
         description: "Session isolation and state management for Phoenix applications"
       ],
       deps: deps(),
-      docs: docs()
+      docs: docs(),
+      aliases: aliases()
     ]
   end
 
@@ -41,7 +42,9 @@ defmodule Phoenix.SessionProcess.MixProject do
     [
       {:plug, "~> 1.0"},
       {:telemetry, "~> 1.0"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -114,6 +117,12 @@ defmodule Phoenix.SessionProcess.MixProject do
         ]
       ],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: ["credo --strict", "dialyzer"]
     ]
   end
 end
