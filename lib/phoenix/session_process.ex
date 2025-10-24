@@ -351,10 +351,10 @@ defmodule Phoenix.SessionProcess do
 
       # Returns list of {session_id, pid} tuples, or empty list if no sessions exist
   """
-  @spec list_session :: [{binary(), pid()}, ...]
+  @spec list_session :: [{binary(), pid()}]
   def list_session do
     Registry.select(SessionRegistry, [
-      {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
+      {{:"$1", :"$2", :_}, [{:is_binary, :"$1"}], [{{:"$1", :"$2"}}]}
     ])
   end
 
@@ -416,11 +416,14 @@ defmodule Phoenix.SessionProcess do
   """
   @spec list_sessions_by_module(module()) :: [binary()]
   def list_sessions_by_module(module) do
-    Registry.select(SessionRegistry, [
-      {{:"$1", :"$2", :"$_"}, [], [{{:"$1", :"$2", :"$_"}}]}
-    ])
-    |> Enum.filter(fn {_session_id, _pid, mod} -> mod == module end)
-    |> Enum.map(fn {session_id, _pid, _mod} -> session_id end)
+    list_session()
+    |> Enum.filter(fn {_session_id, pid} ->
+      case Registry.lookup(SessionRegistry, pid) do
+        [{_, ^module}] -> true
+        _ -> false
+      end
+    end)
+    |> Enum.map(fn {session_id, _pid} -> session_id end)
   end
 
   @doc """
@@ -529,7 +532,7 @@ defmodule Phoenix.SessionProcess do
         current_pid = self()
 
         Registry.select(unquote(SessionRegistry), [
-          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
@@ -551,7 +554,7 @@ defmodule Phoenix.SessionProcess do
         current_pid = self()
 
         Registry.select(unquote(SessionRegistry), [
-          {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
+          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
         ])
         |> Enum.at(0)
         |> elem(0)
@@ -565,6 +568,7 @@ defmodule Phoenix.SessionProcess do
         {:noreply, new_state}
       end
 
+      @impl true
       def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
         new_state =
           state
@@ -573,6 +577,7 @@ defmodule Phoenix.SessionProcess do
         {:noreply, new_state}
       end
 
+      @impl true
       def terminate(_reason, state) do
         state
         |> Map.get(:__live_view__, [])
