@@ -82,10 +82,10 @@ defmodule Phoenix.SessionProcess.MixProject do
         "LICENSE"
       ],
       groups_for_extras: [
-        "Guides": [
+        Guides: [
           "README.md"
         ],
-        "Reference": [
+        Reference: [
           "CHANGELOG.md",
           "LICENSE"
         ]
@@ -95,19 +95,19 @@ defmodule Phoenix.SessionProcess.MixProject do
           Phoenix.SessionProcess,
           Phoenix.SessionProcess.SessionId
         ],
-        "Configuration": [
+        Configuration: [
           Phoenix.SessionProcess.Config
         ],
         "Error Handling": [
           Phoenix.SessionProcess.Error
         ],
-        "Internals": [
+        Internals: [
           Phoenix.SessionProcess.Supervisor,
           Phoenix.SessionProcess.ProcessSupervisor,
           Phoenix.SessionProcess.Cleanup,
           Phoenix.SessionProcess.DefaultSessionProcess
         ],
-        "Utilities": [
+        Utilities: [
           Phoenix.SessionProcess.Helpers,
           Phoenix.SessionProcess.Telemetry,
           Phoenix.SessionProcess.State,

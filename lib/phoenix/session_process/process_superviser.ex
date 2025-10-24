@@ -306,40 +306,36 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp do_call_on_session(session_id, pid, module, request, timeout, start_time) do
-    try do
-      result = GenServer.call(pid, request, timeout)
+    result = GenServer.call(pid, request, timeout)
+    duration = System.monotonic_time() - start_time
+    Telemetry.emit_session_call(session_id, module, pid, request, duration: duration)
+    result
+  catch
+    :exit, {:timeout, _} ->
       duration = System.monotonic_time() - start_time
-      Telemetry.emit_session_call(session_id, module, pid, request, duration: duration)
-      result
-    catch
-      :exit, {:timeout, _} ->
-        duration = System.monotonic_time() - start_time
 
-        Telemetry.emit_communication_error(session_id, module, :call, :timeout,
-          duration: duration
-        )
+      Telemetry.emit_communication_error(session_id, module, :call, :timeout,
+        duration: duration
+      )
 
-        Error.timeout(timeout)
+      Error.timeout(timeout)
 
-      :exit, reason ->
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_communication_error(session_id, module, :call, reason, duration: duration)
-        Error.call_failed(module, :call, {request}, reason)
-    end
+    :exit, reason ->
+      duration = System.monotonic_time() - start_time
+      Telemetry.emit_communication_error(session_id, module, :call, reason, duration: duration)
+      Error.call_failed(module, :call, {request}, reason)
   end
 
   defp do_cast_on_session(session_id, pid, module, request, start_time) do
-    try do
-      result = GenServer.cast(pid, request)
+    result = GenServer.cast(pid, request)
+    duration = System.monotonic_time() - start_time
+    Telemetry.emit_session_cast(session_id, module, pid, request, duration: duration)
+    result
+  catch
+    :exit, reason ->
       duration = System.monotonic_time() - start_time
-      Telemetry.emit_session_cast(session_id, module, pid, request, duration: duration)
-      result
-    catch
-      :exit, reason ->
-        duration = System.monotonic_time() - start_time
-        Telemetry.emit_communication_error(session_id, module, :cast, reason, duration: duration)
-        Error.cast_failed(module, :cast, {request}, reason)
-    end
+      Telemetry.emit_communication_error(session_id, module, :cast, reason, duration: duration)
+      Error.cast_failed(module, :cast, {request}, reason)
   end
 
   @spec child_name(binary()) :: {:via, Registry, {Phoenix.SessionProcess.Registry, binary()}}

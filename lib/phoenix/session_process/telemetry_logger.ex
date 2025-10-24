@@ -49,19 +49,24 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
   def attach_default_logger(opts \\ []) do
     level = Keyword.get(opts, :level, :info)
 
-    :telemetry.attach_many("phoenix-session-process-default-logger", [
-      [:phoenix, :session_process, :start],
-      [:phoenix, :session_process, :stop],
-      [:phoenix, :session_process, :start_error],
-      [:phoenix, :session_process, :communication_error],
-      [:phoenix, :session_process, :call],
-      [:phoenix, :session_process, :cast],
-      [:phoenix, :session_process, :auto_cleanup],
-      [:phoenix, :session_process, :cleanup],
-      [:phoenix, :session_process, :cleanup_error]
-    ], fn event, measurements, metadata, _config ->
-      handle_default_event(event, measurements, metadata, level)
-    end, %{level: level})
+    :telemetry.attach_many(
+      "phoenix-session-process-default-logger",
+      [
+        [:phoenix, :session_process, :start],
+        [:phoenix, :session_process, :stop],
+        [:phoenix, :session_process, :start_error],
+        [:phoenix, :session_process, :communication_error],
+        [:phoenix, :session_process, :call],
+        [:phoenix, :session_process, :cast],
+        [:phoenix, :session_process, :auto_cleanup],
+        [:phoenix, :session_process, :cleanup],
+        [:phoenix, :session_process, :cleanup_error]
+      ],
+      fn event, measurements, metadata, _config ->
+        handle_default_event(event, measurements, metadata, level)
+      end,
+      %{level: level}
+    )
   end
 
   @doc """
@@ -71,12 +76,17 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
   def attach_worker_events(opts \\ []) do
     level = Keyword.get(opts, :level, :debug)
 
-    :telemetry.attach_many("phoenix-session-process-worker-logger", [
-      [:phoenix, :session_process, :worker_start],
-      [:phoenix, :session_process, :worker_terminate]
-    ], fn event, measurements, metadata, _config ->
-      handle_worker_event(event, measurements, metadata, level)
-    end, %{level: level})
+    :telemetry.attach_many(
+      "phoenix-session-process-worker-logger",
+      [
+        [:phoenix, :session_process, :worker_start],
+        [:phoenix, :session_process, :worker_terminate]
+      ],
+      fn event, measurements, metadata, _config ->
+        handle_worker_event(event, measurements, metadata, level)
+      end,
+      %{level: level}
+    )
   end
 
   @doc """
@@ -86,12 +96,17 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
   def attach_session_events(opts \\ []) do
     level = Keyword.get(opts, :level, :info)
 
-    :telemetry.attach_many("phoenix-session-process-session-logger", [
-      [:phoenix, :session_process, :start],
-      [:phoenix, :session_process, :stop]
-    ], fn event, measurements, metadata, _config ->
-      handle_session_event(event, measurements, metadata, level)
-    end, %{level: level})
+    :telemetry.attach_many(
+      "phoenix-session-process-session-logger",
+      [
+        [:phoenix, :session_process, :start],
+        [:phoenix, :session_process, :stop]
+      ],
+      fn event, measurements, metadata, _config ->
+        handle_session_event(event, measurements, metadata, level)
+      end,
+      %{level: level}
+    )
   end
 
   @doc """
@@ -101,16 +116,21 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
   def attach_communication_events(opts \\ []) do
     level = Keyword.get(opts, :level, :info)
 
-    :telemetry.attach_many("phoenix-session-process-communication-logger", [
-      [:phoenix, :session_process, :start],
-      [:phoenix, :session_process, :stop],
-      [:phoenix, :session_process, :call],
-      [:phoenix, :session_process, :cast],
-      [:phoenix, :session_process, :start_error],
-      [:phoenix, :session_process, :communication_error]
-    ], fn event, measurements, metadata, _config ->
-      handle_communication_event(event, measurements, metadata, level)
-    end, %{level: level})
+    :telemetry.attach_many(
+      "phoenix-session-process-communication-logger",
+      [
+        [:phoenix, :session_process, :start],
+        [:phoenix, :session_process, :stop],
+        [:phoenix, :session_process, :call],
+        [:phoenix, :session_process, :cast],
+        [:phoenix, :session_process, :start_error],
+        [:phoenix, :session_process, :communication_error]
+      ],
+      fn event, measurements, metadata, _config ->
+        handle_communication_event(event, measurements, metadata, level)
+      end,
+      %{level: level}
+    )
   end
 
   @doc """
@@ -120,13 +140,18 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
   def attach_cleanup_events(opts \\ []) do
     level = Keyword.get(opts, :level, :debug)
 
-    :telemetry.attach_many("phoenix-session-process-cleanup-logger", [
-      [:phoenix, :session_process, :auto_cleanup],
-      [:phoenix, :session_process, :cleanup],
-      [:phoenix, :session_process, :cleanup_error]
-    ], fn event, measurements, metadata, _config ->
-      handle_cleanup_event(event, measurements, metadata, level)
-    end, %{level: level})
+    :telemetry.attach_many(
+      "phoenix-session-process-cleanup-logger",
+      [
+        [:phoenix, :session_process, :auto_cleanup],
+        [:phoenix, :session_process, :cleanup],
+        [:phoenix, :session_process, :cleanup_error]
+      ],
+      fn event, measurements, metadata, _config ->
+        handle_cleanup_event(event, measurements, metadata, level)
+      end,
+      %{level: level}
+    )
   end
 
   @doc """
@@ -201,35 +226,60 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
 
   defp log_event(_event, _metadata), do: :ok
 
-  defp handle_worker_event([:phoenix, :session_process, :worker_start], _measurements, metadata, level) do
+  defp handle_worker_event(
+         [:phoenix, :session_process, :worker_start],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       worker_spec = Map.get(metadata, :worker_spec, "unknown")
       Logger.debug("Worker start: #{worker_spec}")
     end
   end
 
-  defp handle_worker_event([:phoenix, :session_process, :worker_terminate], _measurements, metadata, level) do
+  defp handle_worker_event(
+         [:phoenix, :session_process, :worker_terminate],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       pid = Map.get(metadata, :pid, "unknown")
       Logger.debug("Worker terminate: #{inspect(pid)}")
     end
   end
 
-  defp handle_session_event([:phoenix, :session_process, :session_start], _measurements, metadata, level) do
+  defp handle_session_event(
+         [:phoenix, :session_process, :session_start],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       Logger.info("Session start: #{session_id}")
     end
   end
 
-  defp handle_session_event([:phoenix, :session_process, :session_end], _measurements, metadata, level) do
+  defp handle_session_event(
+         [:phoenix, :session_process, :session_end],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       Logger.info("Session end: #{session_id}")
     end
   end
 
-  defp handle_communication_event([:phoenix, :session_process, :call], _measurements, metadata, level) do
+  defp handle_communication_event(
+         [:phoenix, :session_process, :call],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       message = Map.get(metadata, :message, "unknown")
@@ -237,7 +287,12 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     end
   end
 
-  defp handle_communication_event([:phoenix, :session_process, :cast], _measurements, metadata, level) do
+  defp handle_communication_event(
+         [:phoenix, :session_process, :cast],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       message = Map.get(metadata, :message, "unknown")
@@ -245,7 +300,12 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     end
   end
 
-  defp handle_communication_event([:phoenix, :session_process, :start_error], _measurements, metadata, level) do
+  defp handle_communication_event(
+         [:phoenix, :session_process, :start_error],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       reason = Map.get(metadata, :reason, "unknown")
@@ -253,7 +313,12 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     end
   end
 
-  defp handle_communication_event([:phoenix, :session_process, :communication_error], _measurements, metadata, level) do
+  defp handle_communication_event(
+         [:phoenix, :session_process, :communication_error],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       reason = Map.get(metadata, :reason, "unknown")
@@ -261,21 +326,36 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
     end
   end
 
-  defp handle_cleanup_event([:phoenix, :session_process, :auto_cleanup], _measurements, metadata, level) do
+  defp handle_cleanup_event(
+         [:phoenix, :session_process, :auto_cleanup],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       Logger.debug("Auto-cleanup expired session: #{session_id}")
     end
   end
 
-  defp handle_cleanup_event([:phoenix, :session_process, :cleanup], _measurements, metadata, level) do
+  defp handle_cleanup_event(
+         [:phoenix, :session_process, :cleanup],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       Logger.debug("Cleanup session: #{session_id}")
     end
   end
 
-  defp handle_cleanup_event([:phoenix, :session_process, :cleanup_error], _measurements, metadata, level) do
+  defp handle_cleanup_event(
+         [:phoenix, :session_process, :cleanup_error],
+         _measurements,
+         metadata,
+         level
+       ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
       reason = Map.get(metadata, :reason, "unknown")

@@ -1,5 +1,10 @@
 defmodule TestProcess do
-  @doc false
+  @moduledoc """
+  Test helper module for session process testing.
+
+  This module provides a simple session process implementation used in tests
+  to verify session process functionality, state management, and lifecycle operations.
+  """
 
   use Phoenix.SessionProcess, :process
 
