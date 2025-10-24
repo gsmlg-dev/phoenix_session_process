@@ -148,6 +148,9 @@ defmodule Phoenix.SessionProcess do
   See the benchmarking guide at `bench/README.md` for details.
   """
 
+  alias Phoenix.SessionProcess.{Config, ProcessSupervisor}
+  alias Phoenix.SessionProcess.Registry, as: SessionRegistry
+
   @doc """
   Starts a session process using the default configured module.
 
@@ -350,7 +353,7 @@ defmodule Phoenix.SessionProcess do
   """
   @spec list_session :: [{binary(), pid()}, ...]
   def list_session do
-    Registry.select(Phoenix.SessionProcess.Registry, [
+    Registry.select(SessionRegistry, [
       {{:":$1", :":$2", :_}, [], [{{:":$1", :":$2"}}]}
     ])
   end
@@ -379,9 +382,9 @@ defmodule Phoenix.SessionProcess do
     modules =
       sessions
       |> Enum.map(fn {_session_id, pid} ->
-        case Registry.lookup(Phoenix.SessionProcess.Registry, pid) do
+        case Registry.lookup(SessionRegistry, pid) do
           [{_, module}] -> module
-          _ -> Phoenix.SessionProcess.Config.session_process()
+          _ -> Config.session_process()
         end
       end)
       |> Enum.uniq()
@@ -413,7 +416,7 @@ defmodule Phoenix.SessionProcess do
   """
   @spec list_sessions_by_module(module()) :: [binary()]
   def list_sessions_by_module(module) do
-    Registry.select(Phoenix.SessionProcess.Registry, [
+    Registry.select(SessionRegistry, [
       {{:"$1", :"$2", :"$_"}, [], [{{:"$1", :"$2", :"$_"}}]}
     ])
     |> Enum.filter(fn {_session_id, _pid, mod} -> mod == module end)
@@ -446,7 +449,7 @@ defmodule Phoenix.SessionProcess do
   """
   @spec find_session(binary()) :: {:ok, pid()} | {:error, :not_found}
   def find_session(session_id) do
-    case Phoenix.SessionProcess.ProcessSupervisor.session_process_pid(session_id) do
+    case ProcessSupervisor.session_process_pid(session_id) do
       nil -> {:error, :not_found}
       pid -> {:ok, pid}
     end
@@ -525,7 +528,7 @@ defmodule Phoenix.SessionProcess do
       def get_session_id do
         current_pid = self()
 
-        Registry.select(Phoenix.SessionProcess.Registry, [
+        Registry.select(unquote(SessionRegistry), [
           {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
         ])
         |> Enum.at(0)
@@ -547,7 +550,7 @@ defmodule Phoenix.SessionProcess do
       def get_session_id do
         current_pid = self()
 
-        Registry.select(Phoenix.SessionProcess.Registry, [
+        Registry.select(unquote(SessionRegistry), [
           {{:":$1", :":$2", :_}, [{:==, :":$2", current_pid}], [{{:":$1", :":$2"}}]}
         ])
         |> Enum.at(0)

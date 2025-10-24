@@ -85,7 +85,8 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   # Automatically defines child_spec/1
   use DynamicSupervisor
 
-  alias Phoenix.SessionProcess.{Error, Telemetry}
+  alias Phoenix.SessionProcess.{Cleanup, Config, Error, Telemetry}
+  alias Phoenix.SessionProcess.Registry, as: SessionRegistry
 
   @doc """
   Starts the process supervisor.
@@ -126,7 +127,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   """
   def start_child(worker, worker_arg) do
     worker_spec = {worker, worker_arg}
-    Phoenix.SessionProcess.Telemetry.emit_worker_start(worker_spec)
+    Telemetry.emit_worker_start(worker_spec)
     DynamicSupervisor.start_child(__MODULE__, worker_spec)
   end
 
@@ -143,7 +144,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   - `{:error, reason}` - Failed to terminate child process
   """
   def terminate_child(pid) do
-    Phoenix.SessionProcess.Telemetry.emit_worker_terminate(pid)
+    Telemetry.emit_worker_terminate(pid)
     DynamicSupervisor.terminate_child(__MODULE__, pid)
   end
 
@@ -176,7 +177,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   - `{:error, reason}` - Failed to start session process
   """
   def start_session(session_id) do
-    start_session_with_module(session_id, Phoenix.SessionProcess.Config.session_process())
+    start_session_with_module(session_id, Config.session_process())
   end
 
   @doc """
@@ -255,7 +256,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   """
   @spec terminate_session(binary()) :: :ok | {:error, :not_found}
   def terminate_session(session_id) do
-    Phoenix.SessionProcess.Telemetry.emit_session_end_event(session_id)
+    Telemetry.emit_session_end_event(session_id)
     start_time = System.monotonic_time()
 
     case session_process_pid(session_id) do
@@ -338,14 +339,14 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
       Error.cast_failed(module, :cast, {request}, reason)
   end
 
-  @spec child_name(binary()) :: {:via, Registry, {Phoenix.SessionProcess.Registry, binary()}}
+  @spec child_name(binary()) :: {:via, Registry, {SessionRegistry, binary()}}
   def child_name(session_id) do
-    {:via, Registry, {Phoenix.SessionProcess.Registry, session_id}}
+    {:via, Registry, {SessionRegistry, session_id}}
   end
 
   @spec session_process_pid(binary()) :: nil | pid()
   def session_process_pid(session_id) do
-    case Registry.whereis_name({Phoenix.SessionProcess.Registry, session_id}) do
+    case Registry.whereis_name({SessionRegistry, session_id}) do
       :undefined -> nil
       pid -> pid
     end
@@ -356,7 +357,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
     with :ok <- validate_session_id(session_id),
          :ok <- check_session_limits() do
-      Phoenix.SessionProcess.Telemetry.emit_session_start_event(session_id)
+      Telemetry.emit_session_start_event(session_id)
 
       worker_args =
         if arg, do: [name: child_name(session_id), arg: arg], else: [name: child_name(session_id)]
@@ -365,15 +366,15 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
       case DynamicSupervisor.start_child(__MODULE__, spec) do
         {:ok, pid} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          Registry.register(SessionRegistry, pid, module)
+          Cleanup.schedule_session_cleanup(session_id)
           duration = System.monotonic_time() - start_time
           Telemetry.emit_session_start(session_id, module, pid, duration: duration)
           result
 
         {:ok, pid, _info} = result ->
-          Registry.register(Phoenix.SessionProcess.Registry, pid, module)
-          Phoenix.SessionProcess.Cleanup.schedule_session_cleanup(session_id)
+          Registry.register(SessionRegistry, pid, module)
+          Cleanup.schedule_session_cleanup(session_id)
           duration = System.monotonic_time() - start_time
           Telemetry.emit_session_start(session_id, module, pid, duration: duration)
           result
@@ -399,7 +400,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
         Error.invalid_session_id(session_id)
 
       {:error, :session_limit_reached} ->
-        max_sessions = Phoenix.SessionProcess.Config.max_sessions()
+        max_sessions = Config.max_sessions()
         duration = System.monotonic_time() - start_time
 
         Telemetry.emit_session_start_error(
@@ -414,14 +415,14 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp get_session_module(pid) do
-    case Registry.lookup(Phoenix.SessionProcess.Registry, pid) do
+    case Registry.lookup(SessionRegistry, pid) do
       [{_, module}] -> module
-      _ -> Phoenix.SessionProcess.Config.session_process()
+      _ -> Config.session_process()
     end
   end
 
   defp validate_session_id(session_id) do
-    if Phoenix.SessionProcess.Config.valid_session_id?(session_id) do
+    if Config.valid_session_id?(session_id) do
       :ok
     else
       {:error, :invalid_session_id}
@@ -429,8 +430,8 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp check_session_limits do
-    max_sessions = Phoenix.SessionProcess.Config.max_sessions()
-    current_sessions = Registry.count(Phoenix.SessionProcess.Registry)
+    max_sessions = Config.max_sessions()
+    current_sessions = Registry.count(SessionRegistry)
 
     if current_sessions < max_sessions do
       :ok

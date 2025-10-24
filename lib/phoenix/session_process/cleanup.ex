@@ -74,6 +74,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   use GenServer
   require Logger
 
+  alias Phoenix.SessionProcess.{Config, Helpers, ProcessSupervisor, Telemetry}
+
   # 1 minute
   @cleanup_interval 60_000
 
@@ -96,12 +98,12 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
-    if Phoenix.SessionProcess.ProcessSupervisor.session_process_started?(session_id) do
-      session_pid = Phoenix.SessionProcess.ProcessSupervisor.session_process_pid(session_id)
+    if ProcessSupervisor.session_process_started?(session_id) do
+      session_pid = ProcessSupervisor.session_process_pid(session_id)
 
-      Phoenix.SessionProcess.Telemetry.emit_auto_cleanup_event(
+      Telemetry.emit_auto_cleanup_event(
         session_id,
-        Phoenix.SessionProcess.Helpers.get_session_module(session_pid),
+        Helpers.get_session_module(session_pid),
         session_pid
       )
 
@@ -126,7 +128,7 @@ defmodule Phoenix.SessionProcess.Cleanup do
   """
   @spec schedule_session_cleanup(binary()) :: :ok
   def schedule_session_cleanup(session_id) do
-    ttl = Phoenix.SessionProcess.Config.session_ttl()
+    ttl = Config.session_ttl()
     Process.send_after(__MODULE__, {:cleanup_session, session_id}, ttl)
     :ok
   end
