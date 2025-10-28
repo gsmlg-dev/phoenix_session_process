@@ -10,21 +10,35 @@ This is Phoenix.SessionProcess, an Elixir library that creates a process for eac
 
 ### Development Commands
 - `mix deps.get` - Install dependencies
+- `mix compile` - Compile the project
+- `mix compile --warnings-as-errors` - Compile with strict warnings (CI requirement)
 - `mix test` - Run all tests
 - `mix test test/path/to/specific_test.exs` - Run a specific test file
-- `mix compile` - Compile the project
-- `mix docs` - Generate documentation
+- `mix test test/phoenix/session_process/` - Run all tests in a directory
 - `mix format` - Format code
+- `mix format --check-formatted` - Check formatting without modifying files (CI requirement)
+- `mix credo --strict` - Run static code analysis with strict mode (CI requirement)
+- `mix dialyzer` - Run type checking (first run builds PLT cache)
+- `mix dialyzer --halt-exit-status` - Run type checking and exit with error code on issues (CI requirement)
+- `mix lint` - Run both Credo and Dialyzer (defined in mix.exs aliases)
+- `mix docs` - Generate documentation
 - `mix hex.publish` - Publish to Hex.pm (requires authentication)
 
+### Code Quality Requirements
+Before committing, ensure code passes all CI checks:
+1. Compiles without warnings: `mix compile --warnings-as-errors`
+2. Properly formatted: `mix format --check-formatted`
+3. Passes Credo: `mix credo --strict`
+4. Passes Dialyzer: `mix dialyzer --halt-exit-status`
+
 ### Testing
-The test suite uses ExUnit. Tests are located in the `test/` directory. The test helper (test/test_helper.exs:3) automatically starts the supervisor.
+The test suite uses ExUnit. Tests are located in the `test/` directory. The test helper (test/test_helper.exs:3) automatically starts the supervisor and configures the default TestProcess module.
 
 ### Development Environment
-The project uses `devenv` for development environment setup with Nix. Key configuration:
-- Uses Elixir/BEAM 27
-- Runs `hello` script on shell entry for greeting
+The project uses `devenv` for development environment setup with Nix:
+- Elixir 1.18+ with OTP 28+ (minimum: Elixir 1.14, OTP 24)
 - Includes git, figlet, and lolcat tools
+- Run `devenv shell` to enter the development environment
 
 ### Benchmarking
 Performance testing available via:
@@ -38,37 +52,72 @@ Expected performance:
 
 ## Architecture
 
+### Module Organization
+
+The library is organized into several logical groups:
+
+**Core API** (primary interface for users):
+- `Phoenix.SessionProcess` - Main public API
+- `Phoenix.SessionProcess.SessionId` - Plug for session ID generation
+
+**Internals** (supervision and lifecycle management):
+- `Phoenix.SessionProcess.Supervisor` - Top-level supervisor (Note: filename is `superviser.ex`)
+- `Phoenix.SessionProcess.ProcessSupervisor` - Dynamic supervisor for sessions (Note: filename is `process_superviser.ex`)
+- `Phoenix.SessionProcess.Cleanup` - TTL-based cleanup
+- `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
+
+**State Management Utilities**:
+- `Phoenix.SessionProcess.State` - Agent-based state storage
+- `Phoenix.SessionProcess.Redux` - Redux-style state with actions/reducers
+- `Phoenix.SessionProcess.MigrationExamples` - Migration examples for Redux
+
+**Configuration & Error Handling**:
+- `Phoenix.SessionProcess.Config` - Configuration management
+- `Phoenix.SessionProcess.Error` - Error types and messages
+
+**Observability**:
+- `Phoenix.SessionProcess.Telemetry` - Telemetry event emission
+- `Phoenix.SessionProcess.TelemetryLogger` - Logging integration
+- `Phoenix.SessionProcess.Helpers` - General utilities
+
 ### Core Components
 
 1. **Phoenix.SessionProcess** (lib/phoenix/session_process.ex:1)
    - Main module providing the public API
    - Delegates to ProcessSupervisor for actual process management
    - Provides two macros: `:process` (basic) and `:process_link` (with LiveView monitoring)
+   - Key functions: `start/1-3`, `call/2-3`, `cast/2`, `terminate/1`, `started?/1`, `list_session/0`
 
 2. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
    - Top-level supervisor that manages the Registry, ProcessSupervisor, and Cleanup
    - Must be added to the application's supervision tree
+   - Supervises: Registry, ProcessSupervisor, and Cleanup GenServer
 
 3. **Phoenix.SessionProcess.ProcessSupervisor** (lib/phoenix/session_process/process_superviser.ex:1)
    - DynamicSupervisor that manages individual session processes
    - Handles starting, terminating, and communicating with session processes
-   - Performs session validation and limit checks
+   - Performs session validation and limit checks (max sessions, rate limiting)
+   - Emits telemetry events for all operations
 
 4. **Phoenix.SessionProcess.SessionId** (lib/phoenix/session_process/session_id.ex)
    - Plug that generates unique session IDs
-   - Must be placed after `:fetch_session` plug
+   - Must be placed after `:fetch_session` plug in router pipeline
+   - Assigns session_id to conn.assigns for use in controllers/LiveViews
 
 5. **Phoenix.SessionProcess.Cleanup** (lib/phoenix/session_process/cleanup.ex:1)
-   - Automatic TTL-based session cleanup
+   - GenServer for automatic TTL-based session cleanup
    - Schedules session expiration on creation
+   - Runs cleanup tasks periodically
 
 6. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
    - Redux-style state management with actions and reducers
    - Provides time-travel debugging, middleware support, and action history
+   - Best for complex applications requiring predictable state updates
 
 7. **Phoenix.SessionProcess.State** (lib/phoenix/session_process/state.ex:1)
-   - Agent-based state storage with Redux-style dispatch support
-   - Used for simpler state management scenarios
+   - Agent-based state storage with simple get/put operations
+   - Also supports Redux-style dispatch for hybrid approaches
+   - Best for simple state management scenarios
 
 ### Process Management Flow
 
