@@ -232,7 +232,12 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
   @spec handle_assign_update(Phoenix.LiveView.Socket.t(), atom(), any()) ::
           Phoenix.LiveView.Socket.t()
   def handle_assign_update(socket, assign_key, value) do
-    Phoenix.Component.assign(socket, assign_key, value)
+    if Code.ensure_loaded?(Phoenix.Component) do
+      apply(Phoenix.Component, :assign, [socket, assign_key, value])
+    else
+      # Fallback if Phoenix.Component is not available
+      Map.update!(socket, :assigns, &Map.put(&1, assign_key, value))
+    end
   end
 
   @doc """
