@@ -9,16 +9,17 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     Selector.clear_cache()
 
     # Create a sample Redux state
-    redux = Redux.init_state(%{
-      user: %{id: 1, name: "Alice", email: "alice@example.com"},
-      items: [
-        %{id: 1, name: "Widget", price: 10, category: "tools"},
-        %{id: 2, name: "Gadget", price: 20, category: "tools"},
-        %{id: 3, name: "Book", price: 15, category: "media"}
-      ],
-      filter: "tools",
-      count: 0
-    })
+    redux =
+      Redux.init_state(%{
+        user: %{id: 1, name: "Alice", email: "alice@example.com"},
+        items: [
+          %{id: 1, name: "Widget", price: 10, category: "tools"},
+          %{id: 2, name: "Gadget", price: 20, category: "tools"},
+          %{id: 3, name: "Book", price: 15, category: "media"}
+        ],
+        filter: "tools",
+        count: 0
+      })
 
     {:ok, redux: redux}
   end
@@ -49,10 +50,11 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
 
   describe "create_selector/2 with memoization" do
     test "creates a memoized selector", %{redux: redux} do
-      selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> length(items) end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> length(items) end
+        )
 
       assert is_map(selector)
       assert Map.has_key?(selector, :deps)
@@ -61,25 +63,27 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     end
 
     test "computes derived state from single dependency", %{redux: redux} do
-      selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> length(items) end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> length(items) end
+        )
 
       result = Selector.select(redux, selector)
       assert result == 3
     end
 
     test "computes derived state from multiple dependencies", %{redux: redux} do
-      selector = Selector.create_selector(
-        [
-          fn state -> state.items end,
-          fn state -> state.filter end
-        ],
-        fn items, filter ->
-          Enum.filter(items, fn item -> item.category == filter end)
-        end
-      )
+      selector =
+        Selector.create_selector(
+          [
+            fn state -> state.items end,
+            fn state -> state.filter end
+          ],
+          fn items, filter ->
+            Enum.filter(items, fn item -> item.category == filter end)
+          end
+        )
 
       result = Selector.select(redux, selector)
       assert length(result) == 2
@@ -90,13 +94,14 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
       # Create selector with side effect to track calls
       call_count = :counters.new(1, [])
 
-      selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items ->
-          :counters.add(call_count, 1, 1)
-          length(items)
-        end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items ->
+            :counters.add(call_count, 1, 1)
+            length(items)
+          end
+        )
 
       # First call - should compute
       result1 = Selector.select(redux, selector)
@@ -106,19 +111,21 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
       # Second call with same state - should use cache
       result2 = Selector.select(redux, selector)
       assert result2 == 3
-      assert :counters.get(call_count, 1) == 1  # No additional computation
+      # No additional computation
+      assert :counters.get(call_count, 1) == 1
     end
 
     test "recomputes when inputs change", %{redux: redux} do
       call_count = :counters.new(1, [])
 
-      selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items ->
-          :counters.add(call_count, 1, 1)
-          length(items)
-        end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items ->
+            :counters.add(call_count, 1, 1)
+            length(items)
+          end
+        )
 
       # First call
       result1 = Selector.select(redux, selector)
@@ -131,14 +138,16 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
       # Should recompute because items changed
       result2 = Selector.select(new_redux, selector)
       assert result2 == 0
-      assert :counters.get(call_count, 1) == 2  # Recomputed
+      # Recomputed
+      assert :counters.get(call_count, 1) == 2
     end
 
     test "validates compute function arity matches dependencies" do
       assert_raise ArgumentError, ~r/arity.*does not match/, fn ->
         Selector.create_selector(
           [fn state -> state.items end, fn state -> state.filter end],
-          fn items -> length(items) end  # Takes 1 arg but should take 2
+          # Takes 1 arg but should take 2
+          fn items -> length(items) end
         )
       end
     end
@@ -150,38 +159,44 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
       items_selector = fn state -> state.items end
 
       # Level 2: Filter items
-      filtered_selector = Selector.create_selector(
-        [items_selector, fn state -> state.filter end],
-        fn items, filter ->
-          Enum.filter(items, &(&1.category == filter))
-        end
-      )
+      filtered_selector =
+        Selector.create_selector(
+          [items_selector, fn state -> state.filter end],
+          fn items, filter ->
+            Enum.filter(items, &(&1.category == filter))
+          end
+        )
 
       # Level 3: Calculate total price
-      total_selector = Selector.create_selector(
-        [filtered_selector],
-        fn filtered_items ->
-          Enum.reduce(filtered_items, 0, &(&1.price + &2))
-        end
-      )
+      total_selector =
+        Selector.create_selector(
+          [filtered_selector],
+          fn filtered_items ->
+            Enum.reduce(filtered_items, 0, &(&1.price + &2))
+          end
+        )
 
       result = Selector.select(redux, total_selector)
-      assert result == 30  # Widget (10) + Gadget (20)
+      # Widget (10) + Gadget (20)
+      assert result == 30
     end
 
     test "complex composition with multiple branches", %{redux: redux} do
       user_name_selector = fn state -> state.user.name end
-      item_count_selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> length(items) end
-      )
 
-      summary_selector = Selector.create_selector(
-        [user_name_selector, item_count_selector],
-        fn name, count ->
-          "#{name} has #{count} items"
-        end
-      )
+      item_count_selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> length(items) end
+        )
+
+      summary_selector =
+        Selector.create_selector(
+          [user_name_selector, item_count_selector],
+          fn name, count ->
+            "#{name} has #{count} items"
+          end
+        )
 
       result = Selector.select(redux, summary_selector)
       assert result == "Alice has 3 items"
@@ -190,10 +205,11 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
 
   describe "cache management" do
     test "clear_cache/0 clears all cached values" do
-      selector = Selector.create_selector(
-        [fn state -> state.count end],
-        fn count -> count * 2 end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.count end],
+          fn count -> count * 2 end
+        )
 
       redux = Redux.init_state(%{count: 5})
 
@@ -215,15 +231,17 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     end
 
     test "clear_selector_cache/1 clears specific selector", %{redux: redux} do
-      selector1 = Selector.create_selector(
-        [fn state -> state.count end],
-        fn count -> count * 2 end
-      )
+      selector1 =
+        Selector.create_selector(
+          [fn state -> state.count end],
+          fn count -> count * 2 end
+        )
 
-      selector2 = Selector.create_selector(
-        [fn state -> state.count end],
-        fn count -> count * 3 end
-      )
+      selector2 =
+        Selector.create_selector(
+          [fn state -> state.count end],
+          fn count -> count * 3 end
+        )
 
       # Use both selectors
       Selector.select(redux, selector1)
@@ -238,15 +256,17 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     end
 
     test "cache_stats/0 returns accurate statistics", %{redux: redux} do
-      selector1 = Selector.create_selector(
-        [fn state -> state.count end],
-        fn count -> count + 1 end
-      )
+      selector1 =
+        Selector.create_selector(
+          [fn state -> state.count end],
+          fn count -> count + 1 end
+        )
 
-      selector2 = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> length(items) end
-      )
+      selector2 =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> length(items) end
+        )
 
       # Initial stats
       stats = Selector.cache_stats()
@@ -266,44 +286,50 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
 
   describe "performance characteristics" do
     test "cache provides performance benefit for expensive computations" do
-      expensive_selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items ->
-          # Simulate expensive computation
-          :timer.sleep(10)
-          Enum.map(items, & &1.price) |> Enum.sum()
-        end
-      )
+      expensive_selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items ->
+            # Simulate expensive computation
+            :timer.sleep(10)
+            Enum.map(items, & &1.price) |> Enum.sum()
+          end
+        )
 
       redux = Redux.init_state(%{items: [%{price: 10}, %{price: 20}, %{price: 30}]})
 
       # First call - should be slow
       {time1, result1} = :timer.tc(fn -> Selector.select(redux, expensive_selector) end)
       assert result1 == 60
-      assert time1 > 10_000  # At least 10ms
+      # At least 10ms
+      assert time1 > 10_000
 
       # Second call - should be fast (cached)
       {time2, result2} = :timer.tc(fn -> Selector.select(redux, expensive_selector) end)
       assert result2 == 60
-      assert time2 < time1 / 2  # Should be much faster
+      # Should be much faster
+      assert time2 < time1 / 2
     end
 
     test "handles large number of selectors efficiently", %{redux: redux} do
       # Create 100 selectors
-      selectors = for i <- 1..100 do
-        Selector.create_selector(
-          [fn state -> state.count end],
-          fn count -> count + i end
-        )
-      end
+      selectors =
+        for i <- 1..100 do
+          Selector.create_selector(
+            [fn state -> state.count end],
+            fn count -> count + i end
+          )
+        end
 
       # Execute all selectors
       results = Enum.map(selectors, &Selector.select(redux, &1))
 
       # Verify all computed correctly
       assert length(results) == 100
-      assert Enum.at(results, 0) == 1  # 0 + 1
-      assert Enum.at(results, 99) == 100  # 0 + 100
+      # 0 + 1
+      assert Enum.at(results, 0) == 1
+      # 0 + 100
+      assert Enum.at(results, 99) == 100
 
       # Check cache stats
       stats = Selector.cache_stats()
@@ -316,10 +342,11 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     test "handles nil values in state" do
       redux = Redux.init_state(%{user: nil, items: []})
 
-      selector = Selector.create_selector(
-        [fn state -> state.user end],
-        fn user -> if user, do: user.name, else: "Guest" end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.user end],
+          fn user -> if user, do: user.name, else: "Guest" end
+        )
 
       result = Selector.select(redux, selector)
       assert result == "Guest"
@@ -328,30 +355,33 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     test "handles empty arrays" do
       redux = Redux.init_state(%{items: []})
 
-      selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> Enum.count(items) end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> Enum.count(items) end
+        )
 
       result = Selector.select(redux, selector)
       assert result == 0
     end
 
     test "handles complex nested structures" do
-      redux = Redux.init_state(%{
-        data: %{
-          deeply: %{
-            nested: %{
-              value: [1, 2, 3]
+      redux =
+        Redux.init_state(%{
+          data: %{
+            deeply: %{
+              nested: %{
+                value: [1, 2, 3]
+              }
             }
           }
-        }
-      })
+        })
 
-      selector = Selector.create_selector(
-        [fn state -> state.data.deeply.nested.value end],
-        fn values -> Enum.sum(values) end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.data.deeply.nested.value end],
+          fn values -> Enum.sum(values) end
+        )
 
       result = Selector.select(redux, selector)
       assert result == 6
@@ -360,15 +390,17 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
     test "different selectors with same cache key don't interfere" do
       redux = Redux.init_state(%{a: 1, b: 2})
 
-      selector1 = Selector.create_selector(
-        [fn state -> state.a end],
-        fn a -> a * 2 end
-      )
+      selector1 =
+        Selector.create_selector(
+          [fn state -> state.a end],
+          fn a -> a * 2 end
+        )
 
-      selector2 = Selector.create_selector(
-        [fn state -> state.a end],
-        fn a -> a * 3 end
-      )
+      selector2 =
+        Selector.create_selector(
+          [fn state -> state.a end],
+          fn a -> a * 3 end
+        )
 
       result1 = Selector.select(redux, selector1)
       result2 = Selector.select(redux, selector2)
@@ -380,10 +412,11 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
 
   describe "selector isolation across processes" do
     test "cache is isolated per process" do
-      selector = Selector.create_selector(
-        [fn state -> state.count end],
-        fn count -> count * 2 end
-      )
+      selector =
+        Selector.create_selector(
+          [fn state -> state.count end],
+          fn count -> count * 2 end
+        )
 
       redux = Redux.init_state(%{count: 5})
 
@@ -396,11 +429,12 @@ defmodule Phoenix.SessionProcess.Redux.SelectorTest do
       assert stats_main.entries == 1
 
       # Spawn new process and check cache is empty
-      task = Task.async(fn ->
-        stats_task = Selector.cache_stats()
-        result_task = Selector.select(redux, selector)
-        {stats_task, result_task}
-      end)
+      task =
+        Task.async(fn ->
+          stats_task = Selector.cache_stats()
+          result_task = Selector.select(redux, selector)
+          {stats_task, result_task}
+        end)
 
       {stats_task, result_task} = Task.await(task)
 

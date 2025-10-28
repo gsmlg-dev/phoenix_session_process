@@ -92,15 +92,16 @@ defmodule Phoenix.SessionProcess.Redux.Selector do
     state = Redux.get_state(redux)
 
     # Extract values from dependency selectors recursively
-    dep_values = Enum.map(deps, fn dep ->
-      # Handle both simple selectors and composed selectors
-      if is_function(dep, 1) do
-        dep.(state)
-      else
-        # Recursively select for composed dependency
-        select(redux, dep)
-      end
-    end)
+    dep_values =
+      Enum.map(deps, fn dep ->
+        # Handle both simple selectors and composed selectors
+        if is_function(dep, 1) do
+          dep.(state)
+        else
+          # Recursively select for composed dependency
+          select(redux, dep)
+        end
+      end)
 
     # Check cache
     case get_cached_result(cache_key, dep_values) do

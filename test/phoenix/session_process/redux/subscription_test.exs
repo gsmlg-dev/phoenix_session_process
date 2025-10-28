@@ -6,11 +6,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
   alias Phoenix.SessionProcess.Redux.Selector
 
   setup do
-    redux = Redux.init_state(%{
-      user: %{id: 1, name: "Alice"},
-      count: 0,
-      items: []
-    })
+    redux =
+      Redux.init_state(%{
+        user: %{id: 1, name: "Alice"},
+        count: 0,
+        items: []
+      })
 
     {:ok, redux: redux}
   end
@@ -20,11 +21,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       # Use send to track callback
       test_pid = self()
 
-      {new_redux, sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:callback, state}) end
-      )
+      {new_redux, sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:callback, state}) end
+        )
 
       # Should receive immediate callback with current state
       assert_receive {:callback, state}
@@ -39,11 +41,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "notifies on every state change", %{redux: redux} do
       test_pid = self()
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:state_change, state.count}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:state_change, state.count}) end
+        )
 
       # Clear initial callback
       assert_receive {:state_change, 0}
@@ -66,17 +69,19 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "supports multiple subscriptions", %{redux: redux} do
       test_pid = self()
 
-      {redux, _sub1} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:sub1, state.count}) end
-      )
+      {redux, _sub1} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:sub1, state.count}) end
+        )
 
-      {redux, _sub2} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:sub2, state.count * 2}) end
-      )
+      {redux, _sub2} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:sub2, state.count * 2}) end
+        )
 
       # Clear initial callbacks
       assert_receive {:sub1, 0}
@@ -97,11 +102,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
       user_selector = fn state -> state.user end
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        user_selector,
-        fn user -> send(test_pid, {:user_changed, user}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          user_selector,
+          fn user -> send(test_pid, {:user_changed, user}) end
+        )
 
       # Clear initial callback
       assert_receive {:user_changed, %{id: 1, name: "Alice"}}
@@ -126,11 +132,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
       items_selector = fn state -> state.items end
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        items_selector,
-        fn items -> send(test_pid, {:items_changed, length(items)}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          items_selector,
+          fn items -> send(test_pid, {:items_changed, length(items)}) end
+        )
 
       # Clear initial callback
       assert_receive {:items_changed, 0}
@@ -154,11 +161,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
       name_selector = fn state -> state.user.name end
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        name_selector,
-        fn name -> send(test_pid, {:name_changed, name}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          name_selector,
+          fn name -> send(test_pid, {:name_changed, name}) end
+        )
 
       # Clear initial callback
       assert_receive {:name_changed, "Alice"}
@@ -186,16 +194,18 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
 
       # Selector that counts items matching a filter
-      items_count_selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items -> length(items) end
-      )
+      items_count_selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items -> length(items) end
+        )
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        items_count_selector,
-        fn count -> send(test_pid, {:count_changed, count}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          items_count_selector,
+          fn count -> send(test_pid, {:count_changed, count}) end
+        )
 
       # Clear initial callback
       assert_receive {:count_changed, 0}
@@ -220,34 +230,37 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "works with multi-dependency selectors", %{redux: redux} do
       test_pid = self()
 
-      redux = Redux.init_state(%{
-        items: [
-          %{name: "A", category: "tools", price: 10},
-          %{name: "B", category: "media", price: 20},
-          %{name: "C", category: "tools", price: 30}
-        ],
-        filter: "tools"
-      })
+      redux =
+        Redux.init_state(%{
+          items: [
+            %{name: "A", category: "tools", price: 10},
+            %{name: "B", category: "media", price: 20},
+            %{name: "C", category: "tools", price: 30}
+          ],
+          filter: "tools"
+        })
 
       # Selector that filters and sums
-      filtered_total_selector = Selector.create_selector(
-        [
-          fn state -> state.items end,
-          fn state -> state.filter end
-        ],
-        fn items, filter ->
-          items
-          |> Enum.filter(&(&1.category == filter))
-          |> Enum.map(& &1.price)
-          |> Enum.sum()
-        end
-      )
+      filtered_total_selector =
+        Selector.create_selector(
+          [
+            fn state -> state.items end,
+            fn state -> state.filter end
+          ],
+          fn items, filter ->
+            items
+            |> Enum.filter(&(&1.category == filter))
+            |> Enum.map(& &1.price)
+            |> Enum.sum()
+          end
+        )
 
-      {redux, _sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        filtered_total_selector,
-        fn total -> send(test_pid, {:total_changed, total}) end
-      )
+      {redux, _sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          filtered_total_selector,
+          fn total -> send(test_pid, {:total_changed, total}) end
+        )
 
       # Clear initial callback (10 + 30 = 40)
       assert_receive {:total_changed, 40}
@@ -272,11 +285,12 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "removes subscription and stops notifications", %{redux: redux} do
       test_pid = self()
 
-      {redux, sub_id} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:notification, state.count}) end
-      )
+      {redux, sub_id} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:notification, state.count}) end
+        )
 
       # Clear initial callback
       assert_receive {:notification, 0}
@@ -299,17 +313,19 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "removes only specified subscription", %{redux: redux} do
       test_pid = self()
 
-      {redux, sub1} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:sub1, state.count}) end
-      )
+      {redux, sub1} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:sub1, state.count}) end
+        )
 
-      {redux, _sub2} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:sub2, state.count}) end
-      )
+      {redux, _sub2} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:sub2, state.count}) end
+        )
 
       # Clear initial callbacks
       assert_receive {:sub1, 0}
@@ -375,17 +391,18 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
 
       # Callback that raises error
-      {redux, _} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state ->
-          if state.count > 0 do
-            raise "Test error"
-          else
-            send(test_pid, {:callback_ok, state.count})
+      {redux, _} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state ->
+            if state.count > 0 do
+              raise "Test error"
+            else
+              send(test_pid, {:callback_ok, state.count})
+            end
           end
-        end
-      )
+        )
 
       # Clear initial callback (count = 0, no error)
       assert_receive {:callback_ok, 0}
@@ -404,18 +421,20 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
 
       # First callback - raises error
-      {redux, _} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn _state -> raise "Error in first callback" end
-      )
+      {redux, _} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn _state -> raise "Error in first callback" end
+        )
 
       # Second callback - works fine
-      {redux, _} = Subscription.subscribe_to_struct(
-        redux,
-        nil,
-        fn state -> send(test_pid, {:second_callback, state.count}) end
-      )
+      {redux, _} =
+        Subscription.subscribe_to_struct(
+          redux,
+          nil,
+          fn state -> send(test_pid, {:second_callback, state.count}) end
+        )
 
       # Clear initial callbacks
       assert_receive {:second_callback, 0}
@@ -434,17 +453,19 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       test_pid = self()
 
       # Add subscription
-      redux = Redux.subscribe(redux, fn state ->
-        send(test_pid, {:state_updated, state.count})
-      end)
+      redux =
+        Redux.subscribe(redux, fn state ->
+          send(test_pid, {:state_updated, state.count})
+        end)
 
       # Clear initial callback
       assert_receive {:state_updated, 0}
 
       # Dispatch action
-      redux = Redux.dispatch(redux, :increment, fn state, :increment ->
-        %{state | count: state.count + 1}
-      end)
+      redux =
+        Redux.dispatch(redux, :increment, fn state, :increment ->
+          %{state | count: state.count + 1}
+        end)
 
       # Should receive notification
       assert_receive {:state_updated, 1}
@@ -456,17 +477,20 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "multiple subscriptions notified in order", %{redux: redux} do
       test_pid = self()
 
-      redux = Redux.subscribe(redux, fn state ->
-        send(test_pid, {:sub1, state.count})
-      end)
+      redux =
+        Redux.subscribe(redux, fn state ->
+          send(test_pid, {:sub1, state.count})
+        end)
 
-      redux = Redux.subscribe(redux, fn state ->
-        send(test_pid, {:sub2, state.count})
-      end)
+      redux =
+        Redux.subscribe(redux, fn state ->
+          send(test_pid, {:sub2, state.count})
+        end)
 
-      redux = Redux.subscribe(redux, fn state ->
-        send(test_pid, {:sub3, state.count})
-      end)
+      redux =
+        Redux.subscribe(redux, fn state ->
+          send(test_pid, {:sub3, state.count})
+        end)
 
       # Clear initial callbacks
       assert_receive {:sub1, 0}
@@ -474,9 +498,10 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       assert_receive {:sub3, 0}
 
       # Dispatch
-      _redux = Redux.dispatch(redux, {:set_count, 5}, fn state, {:set_count, n} ->
-        %{state | count: n}
-      end)
+      _redux =
+        Redux.dispatch(redux, {:set_count, 5}, fn state, {:set_count, n} ->
+          %{state | count: n}
+        end)
 
       # All should be notified
       # Note: Order might not be guaranteed but all should arrive
@@ -497,21 +522,25 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
   describe "performance" do
     test "handles many subscriptions efficiently", %{redux: redux} do
       # Add 100 subscriptions
-      redux = Enum.reduce(1..100, redux, fn i, acc_redux ->
-        {new_redux, _} = Subscription.subscribe_to_struct(
-          acc_redux,
-          nil,
-          fn _state -> :ok end
-        )
-        new_redux
-      end)
+      redux =
+        Enum.reduce(1..100, redux, fn i, acc_redux ->
+          {new_redux, _} =
+            Subscription.subscribe_to_struct(
+              acc_redux,
+              nil,
+              fn _state -> :ok end
+            )
+
+          new_redux
+        end)
 
       assert length(redux.subscriptions) == 100
 
       # Notify all - should complete quickly
-      {time, _} = :timer.tc(fn ->
-        Subscription.notify_all_struct(redux)
-      end)
+      {time, _} =
+        :timer.tc(fn ->
+          Subscription.notify_all_struct(redux)
+        end)
 
       # Should complete in reasonable time (< 100ms for 100 subscriptions)
       assert time < 100_000
@@ -521,20 +550,23 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       call_count = :counters.new(1, [])
 
       # Expensive selector
-      expensive_selector = Selector.create_selector(
-        [fn state -> state.items end],
-        fn items ->
-          :counters.add(call_count, 1, 1)
-          :timer.sleep(1)  # Simulate expensive computation
-          length(items)
-        end
-      )
+      expensive_selector =
+        Selector.create_selector(
+          [fn state -> state.items end],
+          fn items ->
+            :counters.add(call_count, 1, 1)
+            # Simulate expensive computation
+            :timer.sleep(1)
+            length(items)
+          end
+        )
 
-      {redux, _} = Subscription.subscribe_to_struct(
-        redux,
-        expensive_selector,
-        fn _count -> :ok end
-      )
+      {redux, _} =
+        Subscription.subscribe_to_struct(
+          redux,
+          expensive_selector,
+          fn _count -> :ok end
+        )
 
       # Initial computation
       assert :counters.get(call_count, 1) == 1

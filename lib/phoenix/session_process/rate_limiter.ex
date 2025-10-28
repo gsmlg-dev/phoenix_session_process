@@ -114,9 +114,10 @@ defmodule Phoenix.SessionProcess.RateLimiter do
     window_start = now - @window_size_ms
 
     # Count sessions created in the last minute
-    recent_count = :ets.select_count(@table_name, [
-      {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
-    ])
+    recent_count =
+      :ets.select_count(@table_name, [
+        {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
+      ])
 
     duration = System.monotonic_time() - start_time
 
@@ -140,9 +141,10 @@ defmodule Phoenix.SessionProcess.RateLimiter do
     now = System.system_time(:millisecond)
     window_start = now - @window_size_ms
 
-    count = :ets.select_count(@table_name, [
-      {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
-    ])
+    count =
+      :ets.select_count(@table_name, [
+        {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
+      ])
 
     {:reply, count, state}
   end
@@ -171,9 +173,10 @@ defmodule Phoenix.SessionProcess.RateLimiter do
     window_start = now - @window_size_ms
 
     # Delete entries older than the sliding window
-    deleted_count = :ets.select_delete(@table_name, [
-      {{:_, :"$1"}, [{:<, :"$1", window_start}], [true]}
-    ])
+    deleted_count =
+      :ets.select_delete(@table_name, [
+        {{:_, :"$1"}, [{:<, :"$1", window_start}], [true]}
+      ])
 
     if deleted_count > 0 do
       Logger.debug("RateLimiter: Cleaned up #{deleted_count} old entries")

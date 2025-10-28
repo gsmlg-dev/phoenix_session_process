@@ -381,7 +381,11 @@ defmodule Phoenix.SessionProcess.Redux do
         end
       end)
 
-    new_redux = %{redux | current_state: target_state, history: Enum.drop(redux.history, steps_back)}
+    new_redux = %{
+      redux
+      | current_state: target_state,
+        history: Enum.drop(redux.history, steps_back)
+    }
 
     # Notify subscriptions of state change
     notify_subscriptions(new_redux)
@@ -577,7 +581,7 @@ defmodule Phoenix.SessionProcess.Redux do
       unsubscribe.()
 
   """
-  @spec subscribe_to_broadcasts(module(), String.t(), (map() -> any())) :: (() -> :ok)
+  @spec subscribe_to_broadcasts(module(), String.t(), (map() -> any())) :: (-> :ok)
   def subscribe_to_broadcasts(pubsub_module, topic, callback) do
     Phoenix.PubSub.subscribe(pubsub_module, topic)
 

@@ -101,7 +101,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
     # Check if session is actually expired (might have been refreshed)
-    if ActivityTracker.expired?(session_id) and ProcessSupervisor.session_process_started?(session_id) do
+    if ActivityTracker.expired?(session_id) and
+         ProcessSupervisor.session_process_started?(session_id) do
       session_pid = ProcessSupervisor.session_process_pid(session_id)
 
       Telemetry.emit_auto_cleanup_event(

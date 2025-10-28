@@ -252,6 +252,7 @@ defmodule Phoenix.SessionProcess.Redux.Subscription do
       pubsub_topic: nil,
       subscriptions: []
     }
+
     Selector.select(redux, selector)
   end
 
