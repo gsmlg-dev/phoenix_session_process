@@ -17,6 +17,7 @@ defmodule Phoenix.SessionProcess.RateLimiterTest do
       else
         Application.delete_env(:phoenix_session_process, :rate_limit)
       end
+
       RateLimiter.reset()
     end)
 
