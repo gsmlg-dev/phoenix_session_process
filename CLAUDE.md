@@ -67,8 +67,12 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
 **State Management Utilities**:
-- `Phoenix.SessionProcess.Redux` - Optional Redux-style state with actions/reducers (advanced use cases)
+- `Phoenix.SessionProcess.Redux` - Optional Redux-style state with actions/reducers, subscriptions, and selectors (advanced use cases)
+- `Phoenix.SessionProcess.Redux.Selector` - Memoized selectors for efficient derived state
+- `Phoenix.SessionProcess.Redux.Subscription` - Subscription management for reactive state changes
+- `Phoenix.SessionProcess.Redux.LiveView` - LiveView integration helpers
 - `Phoenix.SessionProcess.MigrationExamples` - Migration examples for Redux
+- `Phoenix.SessionProcess.ReduxExamples` - Comprehensive Redux usage examples
 
 **Configuration & Error Handling**:
 - `Phoenix.SessionProcess.Config` - Configuration management
@@ -109,9 +113,14 @@ The library is organized into several logical groups:
    - Runs cleanup tasks periodically
 
 6. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
-   - Optional Redux-style state management with actions and reducers
+   - Optional Redux-style state management with actions, reducers, subscriptions, and selectors
    - Provides time-travel debugging, middleware support, and action history
-   - Best for complex applications requiring predictable state updates and audit trails
+   - **Redux.Selector**: Memoized selectors with reselect-style composition for efficient derived state
+   - **Redux.Subscription**: Subscribe to state changes with optional selectors (only notifies when selected values change)
+   - **Redux.LiveView**: Helper module for LiveView integration with automatic assign updates
+   - **Phoenix.PubSub integration**: Broadcast state changes across nodes for distributed applications
+   - **Comprehensive telemetry**: Monitor Redux operations (dispatch, subscribe, selector cache hits/misses, PubSub broadcasts)
+   - Best for complex applications requiring reactive UIs, predictable state updates, audit trails, or distributed state
    - Note: Most applications don't need this - standard GenServer state is sufficient
 
 ### Process Management Flow
