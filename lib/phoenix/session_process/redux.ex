@@ -158,6 +158,18 @@ defmodule Phoenix.SessionProcess.Redux do
   @type reducer :: (state(), action() -> state())
   @type middleware :: (action(), state(), (action() -> state()) -> state())
 
+  @type t :: %__MODULE__{
+          current_state: state(),
+          initial_state: state(),
+          history: list({action(), state()}),
+          reducer: reducer() | nil,
+          middleware: list(middleware()),
+          max_history_size: non_neg_integer(),
+          pubsub: module() | nil,
+          pubsub_topic: binary() | nil,
+          subscriptions: list(map())
+        }
+
   @doc """
   The Redux state structure containing current state and action history.
   """
@@ -461,17 +473,15 @@ defmodule Phoenix.SessionProcess.Redux do
 
   """
   @spec subscribe(%__MODULE__{}, function()) :: %__MODULE__{}
-  @spec subscribe(%__MODULE__{}, function(), function()) :: %__MODULE__{}
-  def subscribe(redux, selector_or_callback, callback \\ nil) do
+  def subscribe(redux, callback) when is_function(callback, 1) do
     alias Phoenix.SessionProcess.Redux.Subscription
+    {redux, _sub_id} = Subscription.subscribe_to_struct(redux, nil, callback)
+    redux
+  end
 
-    {selector, callback} =
-      if callback do
-        {selector_or_callback, callback}
-      else
-        {nil, selector_or_callback}
-      end
-
+  @spec subscribe(%__MODULE__{}, function() | map(), function()) :: %__MODULE__{}
+  def subscribe(redux, selector, callback) when is_function(callback, 1) do
+    alias Phoenix.SessionProcess.Redux.Subscription
     {redux, _sub_id} = Subscription.subscribe_to_struct(redux, selector, callback)
     redux
   end

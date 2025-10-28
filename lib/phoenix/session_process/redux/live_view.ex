@@ -118,8 +118,8 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
       end
 
   """
-  @spec subscribe_to_session(Phoenix.LiveView.Socket.t(), String.t()) ::
-          Phoenix.LiveView.Socket.t()
+  @spec subscribe_to_session(term(), String.t()) ::
+          term()
   def subscribe_to_session(socket, session_id) do
     subscribe_to_session(socket, session_id, nil, fn state ->
       send(self(), {:redux_state_change, state})
@@ -141,11 +141,11 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
 
   """
   @spec subscribe_to_session(
-          Phoenix.LiveView.Socket.t(),
+          term(),
           String.t(),
           Selector.selector() | nil,
           function()
-        ) :: Phoenix.LiveView.Socket.t()
+        ) :: term()
   def subscribe_to_session(socket, session_id, selector, callback) do
     # Get the Redux state from session process
     case SessionProcess.call(session_id, :get_redux_state) do
@@ -183,10 +183,10 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
 
   """
   @spec assign_from_session(
-          Phoenix.LiveView.Socket.t(),
+          term(),
           String.t(),
           %{atom() => Selector.selector()}
-        ) :: Phoenix.LiveView.Socket.t()
+        ) :: term()
   def assign_from_session(socket, session_id, selectors) do
     Enum.reduce(selectors, socket, fn {assign_key, selector}, acc_socket ->
       subscribe_to_session(acc_socket, session_id, selector, fn value ->
@@ -210,8 +210,8 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
       end
 
   """
-  @spec subscribe_to_pubsub(Phoenix.LiveView.Socket.t(), module(), String.t()) ::
-          Phoenix.LiveView.Socket.t()
+  @spec subscribe_to_pubsub(term(), module(), String.t()) ::
+          term()
   def subscribe_to_pubsub(socket, pubsub_module, topic) do
     Phoenix.PubSub.subscribe(pubsub_module, topic)
     socket
@@ -229,8 +229,8 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
       end
 
   """
-  @spec handle_assign_update(Phoenix.LiveView.Socket.t(), atom(), any()) ::
-          Phoenix.LiveView.Socket.t()
+  @spec handle_assign_update(term(), atom(), any()) ::
+          term()
   def handle_assign_update(socket, assign_key, value) do
     if Code.ensure_loaded?(Phoenix.Component) do
       # credo:disable-for-next-line Credo.Check.Refactor.Apply
