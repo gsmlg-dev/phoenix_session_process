@@ -78,7 +78,16 @@ defmodule Phoenix.SessionProcess.ConfigTest do
 
   describe "rate_limit/0" do
     test "returns default rate limit when not configured" do
+      # Temporarily remove configuration to test default
+      original_value = Application.get_env(:phoenix_session_process, :rate_limit)
+      Application.delete_env(:phoenix_session_process, :rate_limit)
+
       assert Config.rate_limit() == 100
+
+      # Restore original value
+      if original_value do
+        Application.put_env(:phoenix_session_process, :rate_limit, original_value)
+      end
     end
 
     test "returns configured rate limit when set" do
