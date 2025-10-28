@@ -148,7 +148,7 @@ defmodule Phoenix.SessionProcess do
   See the benchmarking guide at `bench/README.md` for details.
   """
 
-  alias Phoenix.SessionProcess.{Config, ProcessSupervisor}
+  alias Phoenix.SessionProcess.{Cleanup, Config, ProcessSupervisor}
   alias Phoenix.SessionProcess.Registry, as: SessionRegistry
 
   @doc """
@@ -315,7 +315,7 @@ defmodule Phoenix.SessionProcess do
   @spec touch(binary()) :: :ok | {:error, :not_found}
   def touch(session_id) do
     if started?(session_id) do
-      Phoenix.SessionProcess.Cleanup.refresh_session(session_id)
+      Cleanup.refresh_session(session_id)
       :ok
     else
       {:error, :not_found}

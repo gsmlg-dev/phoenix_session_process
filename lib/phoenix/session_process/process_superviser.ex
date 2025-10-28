@@ -446,9 +446,8 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp check_session_limits do
-    with :ok <- check_max_sessions(),
-         :ok <- check_rate_limit() do
-      :ok
+    with :ok <- check_max_sessions() do
+      check_rate_limit()
     end
   end
 

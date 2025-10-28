@@ -210,6 +210,7 @@ defmodule Phoenix.SessionProcess.Redux.Subscription do
        ) do
     # Extract new value using selector
     # Wrap in try/catch to handle selector errors
+    # credo:disable-for-next-line Credo.Check.Readability.PreferImplicitTry
     try do
       new_value = apply_selector(selector, new_state)
 
@@ -257,6 +258,7 @@ defmodule Phoenix.SessionProcess.Redux.Subscription do
   end
 
   defp invoke_callback(callback, value) do
+    # credo:disable-for-next-line Credo.Check.Readability.PreferImplicitTry
     try do
       callback.(value)
     rescue

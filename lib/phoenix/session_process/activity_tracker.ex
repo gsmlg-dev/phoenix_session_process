@@ -40,6 +40,8 @@ defmodule Phoenix.SessionProcess.ActivityTracker do
       expired? = ActivityTracker.expired?("session_123", ttl: 3_600_000)
   """
 
+  alias Phoenix.SessionProcess.Config
+
   @table_name :session_activity
 
   @doc """
@@ -127,7 +129,7 @@ defmodule Phoenix.SessionProcess.ActivityTracker do
   """
   @spec expired?(binary(), keyword()) :: boolean()
   def expired?(session_id, opts \\ []) do
-    ttl = Keyword.get(opts, :ttl, Phoenix.SessionProcess.Config.session_ttl())
+    ttl = Keyword.get(opts, :ttl, Config.session_ttl())
     now = System.system_time(:millisecond)
     expiry_threshold = now - ttl
 
@@ -172,7 +174,7 @@ defmodule Phoenix.SessionProcess.ActivityTracker do
   """
   @spec get_expired_sessions(keyword()) :: [binary()]
   def get_expired_sessions(opts \\ []) do
-    ttl = Keyword.get(opts, :ttl, Phoenix.SessionProcess.Config.session_ttl())
+    ttl = Keyword.get(opts, :ttl, Config.session_ttl())
     now = System.system_time(:millisecond)
     expiry_threshold = now - ttl
 
