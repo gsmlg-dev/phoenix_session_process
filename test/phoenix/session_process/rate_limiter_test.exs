@@ -6,6 +6,20 @@ defmodule Phoenix.SessionProcess.RateLimiterTest do
   setup do
     # Reset rate limiter before each test
     RateLimiter.reset()
+
+    # Save original rate limit configuration
+    original_rate_limit = Application.get_env(:phoenix_session_process, :rate_limit)
+
+    # Restore rate limit after each test
+    on_exit(fn ->
+      if original_rate_limit do
+        Application.put_env(:phoenix_session_process, :rate_limit, original_rate_limit)
+      else
+        Application.delete_env(:phoenix_session_process, :rate_limit)
+      end
+      RateLimiter.reset()
+    end)
+
     :ok
   end
 
