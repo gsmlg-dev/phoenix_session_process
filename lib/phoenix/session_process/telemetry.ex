@@ -241,4 +241,28 @@ defmodule Phoenix.SessionProcess.Telemetry do
       %{session_id: session_id, module: module, pid: pid}
     )
   end
+
+  @doc """
+  Emits a telemetry event for rate limit check.
+  """
+  @spec emit_rate_limit_check(non_neg_integer(), non_neg_integer(), keyword()) :: :ok
+  def emit_rate_limit_check(current_count, rate_limit, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :rate_limit_check],
+      Map.new(measurements),
+      %{current_count: current_count, rate_limit: rate_limit}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event when rate limit is exceeded.
+  """
+  @spec emit_rate_limit_exceeded(non_neg_integer(), non_neg_integer(), keyword()) :: :ok
+  def emit_rate_limit_exceeded(current_count, rate_limit, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :rate_limit_exceeded],
+      Map.new(measurements),
+      %{current_count: current_count, rate_limit: rate_limit}
+    )
+  end
 end

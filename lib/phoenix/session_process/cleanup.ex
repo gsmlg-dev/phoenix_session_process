@@ -74,7 +74,7 @@ defmodule Phoenix.SessionProcess.Cleanup do
   use GenServer
   require Logger
 
-  alias Phoenix.SessionProcess.{Config, Helpers, ProcessSupervisor, Telemetry}
+  alias Phoenix.SessionProcess.{ActivityTracker, Config, Helpers, ProcessSupervisor, Telemetry}
 
   # 1 minute
   @cleanup_interval 60_000
@@ -85,8 +85,10 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   @impl true
   def init(_opts) do
+    # Initialize activity tracker
+    ActivityTracker.init()
     schedule_cleanup()
-    {:ok, %{}}
+    {:ok, %{timers: %{}}}
   end
 
   @impl true
@@ -98,7 +100,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
-    if ProcessSupervisor.session_process_started?(session_id) do
+    # Check if session is actually expired (might have been refreshed)
+    if ActivityTracker.expired?(session_id) and ProcessSupervisor.session_process_started?(session_id) do
       session_pid = ProcessSupervisor.session_process_pid(session_id)
 
       Telemetry.emit_auto_cleanup_event(
@@ -108,9 +111,37 @@ defmodule Phoenix.SessionProcess.Cleanup do
       )
 
       Phoenix.SessionProcess.terminate(session_id)
+      ActivityTracker.remove(session_id)
     end
 
-    {:noreply, state}
+    # Remove timer reference
+    new_state = %{state | timers: Map.delete(state.timers, session_id)}
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_call({:store_timer, session_id, timer_ref}, _from, state) do
+    # Cancel old timer if exists
+    case Map.get(state.timers, session_id) do
+      nil -> :ok
+      old_ref -> Process.cancel_timer(old_ref)
+    end
+
+    new_timers = Map.put(state.timers, session_id, timer_ref)
+    {:reply, :ok, %{state | timers: new_timers}}
+  end
+
+  @impl true
+  def handle_call({:cancel_timer, session_id}, _from, state) do
+    case Map.pop(state.timers, session_id) do
+      {nil, _} ->
+        {:reply, :ok, state}
+
+      {timer_ref, new_timers} ->
+        Process.cancel_timer(timer_ref)
+        ActivityTracker.remove(session_id)
+        {:reply, :ok, %{state | timers: new_timers}}
+    end
   end
 
   defp schedule_cleanup do
@@ -118,27 +149,73 @@ defmodule Phoenix.SessionProcess.Cleanup do
   end
 
   defp cleanup_expired_sessions do
-    # This could be enhanced to track last activity
-    # For now, sessions are cleaned up based on TTL from creation
+    start_time = System.monotonic_time()
+    ttl = Config.session_ttl()
+
+    # Check all active sessions for expiration
+    all_sessions = Phoenix.SessionProcess.list_session()
+
+    expired_count =
+      all_sessions
+      |> Enum.filter(fn {session_id, _pid} ->
+        ActivityTracker.expired?(session_id, ttl: ttl)
+      end)
+      |> Enum.map(fn {session_id, pid} ->
+        Logger.debug("Cleanup: Terminating expired session #{session_id}")
+
+        Telemetry.emit_auto_cleanup_event(
+          session_id,
+          Helpers.get_session_module(pid),
+          pid
+        )
+
+        Phoenix.SessionProcess.terminate(session_id)
+        ActivityTracker.remove(session_id)
+
+        session_id
+      end)
+      |> length()
+
+    duration = System.monotonic_time() - start_time
+
+    if expired_count > 0 do
+      Logger.info("Cleanup: Removed #{expired_count} expired sessions in #{duration}µs")
+    end
+
     :ok
   end
 
   @doc """
   Schedules cleanup for a specific session after TTL.
+  Returns timer reference for potential cancellation.
   """
-  @spec schedule_session_cleanup(binary()) :: :ok
+  @spec schedule_session_cleanup(binary()) :: reference()
   def schedule_session_cleanup(session_id) do
     ttl = Config.session_ttl()
-    Process.send_after(__MODULE__, {:cleanup_session, session_id}, ttl)
-    :ok
+    timer_ref = Process.send_after(__MODULE__, {:cleanup_session, session_id}, ttl)
+    GenServer.call(__MODULE__, {:store_timer, session_id, timer_ref})
+
+    # Record initial activity
+    ActivityTracker.touch(session_id)
+
+    timer_ref
   end
 
   @doc """
   Cancels scheduled cleanup for a session.
   """
-  @spec cancel_session_cleanup(reference()) :: :ok
-  def cancel_session_cleanup(timer_ref) do
-    if timer_ref, do: Process.cancel_timer(timer_ref)
-    :ok
+  @spec cancel_session_cleanup(binary()) :: :ok
+  def cancel_session_cleanup(session_id) do
+    GenServer.call(__MODULE__, {:cancel_timer, session_id})
+  end
+
+  @doc """
+  Refreshes the TTL for a session by canceling the old timer and scheduling a new one.
+  This is called when a session is actively used to extend its lifetime.
+  """
+  @spec refresh_session(binary()) :: reference()
+  def refresh_session(session_id) do
+    cancel_session_cleanup(session_id)
+    schedule_session_cleanup(session_id)
   end
 end

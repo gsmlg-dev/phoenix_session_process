@@ -283,13 +283,13 @@ defmodule MyApp.ComplexSessionProcess do
 end
 ```
 
-## State Management Options
+## State Management
 
-Phoenix.SessionProcess provides three approaches to manage session state, each suited for different use cases:
+Phoenix.SessionProcess uses standard GenServer state management. For 95% of use cases, this is all you need:
 
-### 1. Basic GenServer (Full Control)
+### Standard GenServer State (Recommended)
 
-Use standard GenServer callbacks for complete control over state management:
+Use standard GenServer callbacks for full control over state management:
 
 ```elixir
 defmodule MyApp.BasicSessionProcess do
@@ -318,52 +318,11 @@ defmodule MyApp.BasicSessionProcess do
 end
 ```
 
-**Best for:** Custom logic, complex state transitions, performance-critical applications.
+This is idiomatic Elixir and gives you full control over your state transitions.
 
-### 2. Agent-Based State (Simple and Fast)
+### Advanced: Redux-Style State (Optional)
 
-Use `Phoenix.SessionProcess.State` for simple key-value storage with Agent:
-
-```elixir
-defmodule MyApp.AgentSessionProcess do
-  use Phoenix.SessionProcess, :process
-
-  @impl true
-  def init(_init_arg) do
-    {:ok, state_pid} = Phoenix.SessionProcess.State.start_link(%{
-      user: nil,
-      preferences: %{},
-      cart: []
-    })
-    {:ok, %{state: state_pid}}
-  end
-
-  @impl true
-  def handle_call(:get_user, _from, %{state: state_pid} = state) do
-    user = Phoenix.SessionProcess.State.get(state_pid, :user)
-    {:reply, user, state}
-  end
-
-  @impl true
-  def handle_cast({:set_user, user}, %{state: state_pid} = state) do
-    Phoenix.SessionProcess.State.put(state_pid, :user, user)
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_cast({:add_to_cart, item}, %{state: state_pid} = state) do
-    cart = Phoenix.SessionProcess.State.get(state_pid, :cart)
-    Phoenix.SessionProcess.State.put(state_pid, :cart, [item | cart])
-    {:noreply, state}
-  end
-end
-```
-
-**Best for:** Simple state management, quick prototyping, lightweight applications.
-
-### 3. Redux-Style State (Predictable and Debuggable)
-
-Use `Phoenix.SessionProcess.Redux` for predictable state updates with actions and reducers:
+For complex applications requiring audit trails or time-travel debugging, you can optionally use `Phoenix.SessionProcess.Redux`:
 
 ```elixir
 defmodule MyApp.ReduxSessionProcess do

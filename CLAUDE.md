@@ -67,8 +67,7 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
 **State Management Utilities**:
-- `Phoenix.SessionProcess.State` - Agent-based state storage
-- `Phoenix.SessionProcess.Redux` - Redux-style state with actions/reducers
+- `Phoenix.SessionProcess.Redux` - Optional Redux-style state with actions/reducers (advanced use cases)
 - `Phoenix.SessionProcess.MigrationExamples` - Migration examples for Redux
 
 **Configuration & Error Handling**:
@@ -110,14 +109,10 @@ The library is organized into several logical groups:
    - Runs cleanup tasks periodically
 
 6. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
-   - Redux-style state management with actions and reducers
+   - Optional Redux-style state management with actions and reducers
    - Provides time-travel debugging, middleware support, and action history
-   - Best for complex applications requiring predictable state updates
-
-7. **Phoenix.SessionProcess.State** (lib/phoenix/session_process/state.ex:1)
-   - Agent-based state storage with simple get/put operations
-   - Also supports Redux-style dispatch for hybrid approaches
-   - Best for simple state management scenarios
+   - Best for complex applications requiring predictable state updates and audit trails
+   - Note: Most applications don't need this - standard GenServer state is sufficient
 
 ### Process Management Flow
 
@@ -167,11 +162,16 @@ Configuration options:
 
 ## State Management Options
 
-The library provides three state management approaches:
+The library provides two state management approaches:
 
-1. **Basic GenServer** - Full control with standard GenServer callbacks
-2. **Phoenix.SessionProcess.State** - Agent-based with simple get/put and Redux dispatch
-3. **Phoenix.SessionProcess.Redux** - Full Redux pattern with actions, reducers, middleware, time-travel debugging
+1. **Standard GenServer State** (Recommended) - Full control with standard GenServer callbacks
+   - Use `handle_call`, `handle_cast`, and `handle_info` to manage state
+   - Simple, idiomatic Elixir - this is what you should use for 95% of cases
+
+2. **Phoenix.SessionProcess.Redux** (Optional, Advanced) - Redux pattern for complex state machines
+   - Actions, reducers, middleware, time-travel debugging
+   - Only use if you need audit trails or complex state machine logic
+   - Adds complexity - most applications don't need this
 
 ## Telemetry and Error Handling
 

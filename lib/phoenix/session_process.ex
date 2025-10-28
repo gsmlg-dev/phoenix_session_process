@@ -290,6 +290,39 @@ defmodule Phoenix.SessionProcess do
     as: :terminate_session
 
   @doc """
+  Refreshes the TTL for a session, extending its lifetime.
+
+  Call this function when you want to keep a session alive beyond its
+  normal TTL. This is useful for active sessions that should not expire
+  even if they haven't received calls or casts recently.
+
+  ## Parameters
+  - `session_id` - Unique binary identifier for the session
+
+  ## Returns
+  - `:ok` - Session TTL refreshed successfully
+  - `{:error, :not_found}` - Session does not exist
+
+  ## Examples
+
+      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+
+      # Keep session alive
+      :ok = Phoenix.SessionProcess.touch("user_123")
+
+      # Session TTL is reset to full duration
+  """
+  @spec touch(binary()) :: :ok | {:error, :not_found}
+  def touch(session_id) do
+    if started?(session_id) do
+      Phoenix.SessionProcess.Cleanup.refresh_session(session_id)
+      :ok
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
   Makes a synchronous call to a session process.
 
   Sends a synchronous request to the session process and waits for a response.
@@ -531,11 +564,16 @@ defmodule Phoenix.SessionProcess do
       def get_session_id do
         current_pid = self()
 
-        Registry.select(unquote(SessionRegistry), [
-          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
-        ])
-        |> Enum.at(0)
-        |> elem(0)
+        case Registry.select(unquote(SessionRegistry), [
+               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+             ])
+             |> Enum.at(0) do
+          {session_id, _pid} ->
+            session_id
+
+          nil ->
+            raise "Session process not yet registered or registration failed"
+        end
       end
     end
   end
@@ -545,19 +583,24 @@ defmodule Phoenix.SessionProcess do
       use GenServer
 
       def start_link(opts) do
-        args = Keyword.get(opts, :args, %{})
+        arg = Keyword.get(opts, :arg, %{})
         name = Keyword.get(opts, :name)
-        GenServer.start_link(__MODULE__, args, name: name)
+        GenServer.start_link(__MODULE__, arg, name: name)
       end
 
       def get_session_id do
         current_pid = self()
 
-        Registry.select(unquote(SessionRegistry), [
-          {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
-        ])
-        |> Enum.at(0)
-        |> elem(0)
+        case Registry.select(unquote(SessionRegistry), [
+               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+             ])
+             |> Enum.at(0) do
+          {session_id, _pid} ->
+            session_id
+
+          nil ->
+            raise "Session process not yet registered or registration failed"
+        end
       end
 
       def handle_cast({:monitor, pid}, state) do
