@@ -2,8 +2,8 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
   use ExUnit.Case, async: true
 
   alias Phoenix.SessionProcess.Redux
-  alias Phoenix.SessionProcess.Redux.Subscription
   alias Phoenix.SessionProcess.Redux.Selector
+  alias Phoenix.SessionProcess.Redux.Subscription
 
   setup do
     redux =
@@ -302,7 +302,7 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
 
       # Unsubscribe
       redux = Subscription.unsubscribe_from_struct(redux, sub_id)
-      assert length(redux.subscriptions) == 0
+      assert Enum.empty?(redux.subscriptions)
 
       # Update state - should NOT notify
       redux = %{redux | current_state: %{redux.current_state | count: 2}}

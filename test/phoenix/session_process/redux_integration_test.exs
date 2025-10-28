@@ -190,8 +190,8 @@ defmodule Phoenix.SessionProcess.ReduxIntegrationTest do
             category_filtered,
             fn state -> state.showOnlyInStock end
           ],
-          fn filtered, onlyInStock ->
-            if onlyInStock do
+          fn filtered, only_in_stock ->
+            if only_in_stock do
               Enum.filter(filtered, & &1.inStock)
             else
               filtered

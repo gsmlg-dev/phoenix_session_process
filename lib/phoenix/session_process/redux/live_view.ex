@@ -233,6 +233,7 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
           Phoenix.LiveView.Socket.t()
   def handle_assign_update(socket, assign_key, value) do
     if Code.ensure_loaded?(Phoenix.Component) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
       apply(Phoenix.Component, :assign, [socket, assign_key, value])
     else
       # Fallback if Phoenix.Component is not available
