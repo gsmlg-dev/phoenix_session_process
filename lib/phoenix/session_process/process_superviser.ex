@@ -85,7 +85,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   # Automatically defines child_spec/1
   use DynamicSupervisor
 
-  alias Phoenix.SessionProcess.{Cleanup, Config, Error, Telemetry}
+  alias Phoenix.SessionProcess.{ActivityTracker, Cleanup, Config, Error, RateLimiter, Telemetry}
   alias Phoenix.SessionProcess.Registry, as: SessionRegistry
 
   @doc """
@@ -307,6 +307,9 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp do_call_on_session(session_id, pid, module, request, timeout, start_time) do
+    # Update activity on call
+    ActivityTracker.touch(session_id)
+
     result = GenServer.call(pid, request, timeout)
     duration = System.monotonic_time() - start_time
     Telemetry.emit_session_call(session_id, module, pid, request, duration: duration)
@@ -326,6 +329,9 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp do_cast_on_session(session_id, pid, module, request, start_time) do
+    # Update activity on cast
+    ActivityTracker.touch(session_id)
+
     result = GenServer.cast(pid, request)
     duration = System.monotonic_time() - start_time
     Telemetry.emit_session_cast(session_id, module, pid, request, duration: duration)
@@ -409,6 +415,18 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
         )
 
         Error.session_limit_reached(max_sessions)
+
+      {:error, {:rate_limit_exceeded, rate_limit}} ->
+        duration = System.monotonic_time() - start_time
+
+        Telemetry.emit_session_start_error(
+          session_id,
+          module,
+          {:rate_limit_exceeded, rate_limit},
+          duration: duration
+        )
+
+        Error.rate_limit_exceeded(rate_limit)
     end
   end
 
@@ -428,6 +446,12 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   defp check_session_limits do
+    with :ok <- check_max_sessions() do
+      check_rate_limit()
+    end
+  end
+
+  defp check_max_sessions do
     max_sessions = Config.max_sessions()
     current_sessions = Registry.count(SessionRegistry)
 
@@ -435,6 +459,16 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
       :ok
     else
       {:error, :session_limit_reached}
+    end
+  end
+
+  defp check_rate_limit do
+    case RateLimiter.check_rate_limit() do
+      :ok ->
+        :ok
+
+      {:error, :rate_limit_exceeded} ->
+        {:error, {:rate_limit_exceeded, Config.rate_limit()}}
     end
   end
 end

@@ -84,6 +84,7 @@ defmodule Phoenix.SessionProcess.Error do
           {:error,
            {:invalid_session_id, String.t()}
            | {:session_limit_reached, non_neg_integer()}
+           | {:rate_limit_exceeded, non_neg_integer()}
            | {:session_not_found, String.t()}
            | {:process_not_found, String.t()}
            | {:timeout, timeout()}
@@ -110,6 +111,15 @@ defmodule Phoenix.SessionProcess.Error do
           {:error, {:session_limit_reached, non_neg_integer()}}
   def session_limit_reached(max_sessions) do
     {:error, {:session_limit_reached, max_sessions}}
+  end
+
+  @doc """
+  Creates a rate limit exceeded error.
+  """
+  @spec rate_limit_exceeded(non_neg_integer()) ::
+          {:error, {:rate_limit_exceeded, non_neg_integer()}}
+  def rate_limit_exceeded(rate_limit) do
+    {:error, {:rate_limit_exceeded, rate_limit}}
   end
 
   @doc """
@@ -162,6 +172,10 @@ defmodule Phoenix.SessionProcess.Error do
 
   def message({:error, {:session_limit_reached, max_sessions}}) do
     "Maximum concurrent sessions limit (#{max_sessions}) reached"
+  end
+
+  def message({:error, {:rate_limit_exceeded, rate_limit}}) do
+    "Rate limit exceeded: maximum #{rate_limit} sessions per minute"
   end
 
   def message({:error, {:session_not_found, session_id}}) do

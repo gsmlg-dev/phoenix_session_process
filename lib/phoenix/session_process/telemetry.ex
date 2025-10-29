@@ -30,6 +30,16 @@ defmodule Phoenix.SessionProcess.Telemetry do
   - `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
   - `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
 
+  ### Redux State Management
+  - `[:phoenix, :session_process, :redux, :dispatch]` - When a Redux action is dispatched
+  - `[:phoenix, :session_process, :redux, :subscribe]` - When a subscription is created
+  - `[:phoenix, :session_process, :redux, :unsubscribe]` - When a subscription is removed
+  - `[:phoenix, :session_process, :redux, :notification]` - When subscriptions are notified
+  - `[:phoenix, :session_process, :redux, :selector_cache_hit]` - When selector cache is hit
+  - `[:phoenix, :session_process, :redux, :selector_cache_miss]` - When selector cache misses
+  - `[:phoenix, :session_process, :redux, :pubsub_broadcast]` - When state is broadcast via PubSub
+  - `[:phoenix, :session_process, :redux, :pubsub_receive]` - When PubSub broadcast is received
+
   All events include the following metadata:
   - `session_id` - The session ID (when applicable)
   - `module` - The session module
@@ -239,6 +249,128 @@ defmodule Phoenix.SessionProcess.Telemetry do
       [:phoenix, :session_process, :auto_cleanup],
       Map.new(measurements),
       %{session_id: session_id, module: module, pid: pid}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for rate limit check.
+  """
+  @spec emit_rate_limit_check(non_neg_integer(), non_neg_integer(), keyword()) :: :ok
+  def emit_rate_limit_check(current_count, rate_limit, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :rate_limit_check],
+      Map.new(measurements),
+      %{current_count: current_count, rate_limit: rate_limit}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event when rate limit is exceeded.
+  """
+  @spec emit_rate_limit_exceeded(non_neg_integer(), non_neg_integer(), keyword()) :: :ok
+  def emit_rate_limit_exceeded(current_count, rate_limit, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :rate_limit_exceeded],
+      Map.new(measurements),
+      %{current_count: current_count, rate_limit: rate_limit}
+    )
+  end
+
+  # Redux Telemetry Events
+
+  @doc """
+  Emits a telemetry event for Redux action dispatch.
+  """
+  @spec emit_redux_dispatch(String.t() | nil, any(), keyword()) :: :ok
+  def emit_redux_dispatch(session_id, action, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :dispatch],
+      Map.new(measurements),
+      %{session_id: session_id, action: action}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux subscription creation.
+  """
+  @spec emit_redux_subscribe(String.t() | nil, reference(), keyword()) :: :ok
+  def emit_redux_subscribe(session_id, subscription_id, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :subscribe],
+      Map.new(measurements),
+      %{session_id: session_id, subscription_id: subscription_id}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux subscription removal.
+  """
+  @spec emit_redux_unsubscribe(String.t() | nil, reference(), keyword()) :: :ok
+  def emit_redux_unsubscribe(session_id, subscription_id, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :unsubscribe],
+      Map.new(measurements),
+      %{session_id: session_id, subscription_id: subscription_id}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux subscription notification.
+  """
+  @spec emit_redux_notification(String.t() | nil, non_neg_integer(), keyword()) :: :ok
+  def emit_redux_notification(session_id, subscription_count, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :notification],
+      Map.new(measurements),
+      %{session_id: session_id, subscription_count: subscription_count}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux selector cache hit.
+  """
+  @spec emit_redux_selector_cache_hit(reference(), keyword()) :: :ok
+  def emit_redux_selector_cache_hit(cache_key, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :selector_cache_hit],
+      Map.new(measurements),
+      %{cache_key: cache_key}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux selector cache miss.
+  """
+  @spec emit_redux_selector_cache_miss(reference(), keyword()) :: :ok
+  def emit_redux_selector_cache_miss(cache_key, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :selector_cache_miss],
+      Map.new(measurements),
+      %{cache_key: cache_key}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux PubSub broadcast.
+  """
+  @spec emit_redux_pubsub_broadcast(String.t(), any(), keyword()) :: :ok
+  def emit_redux_pubsub_broadcast(topic, action, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :pubsub_broadcast],
+      Map.new(measurements),
+      %{topic: topic, action: action}
+    )
+  end
+
+  @doc """
+  Emits a telemetry event for Redux PubSub message receive.
+  """
+  @spec emit_redux_pubsub_receive(String.t(), any(), keyword()) :: :ok
+  def emit_redux_pubsub_receive(topic, action, measurements \\ []) do
+    :telemetry.execute(
+      [:phoenix, :session_process, :redux, :pubsub_receive],
+      Map.new(measurements),
+      %{topic: topic, action: action}
     )
   end
 end

@@ -78,6 +78,7 @@ defmodule Phoenix.SessionProcess.Supervisor do
     children = [
       {Registry, keys: :unique, name: Phoenix.SessionProcess.Registry},
       {Phoenix.SessionProcess.ProcessSupervisor, []},
+      {Phoenix.SessionProcess.RateLimiter, []},
       {Phoenix.SessionProcess.Cleanup, []}
     ]
 

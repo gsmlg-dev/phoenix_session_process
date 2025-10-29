@@ -283,13 +283,13 @@ defmodule MyApp.ComplexSessionProcess do
 end
 ```
 
-## State Management Options
+## State Management
 
-Phoenix.SessionProcess provides three approaches to manage session state, each suited for different use cases:
+Phoenix.SessionProcess uses standard GenServer state management. For 95% of use cases, this is all you need:
 
-### 1. Basic GenServer (Full Control)
+### Standard GenServer State (Recommended)
 
-Use standard GenServer callbacks for complete control over state management:
+Use standard GenServer callbacks for full control over state management:
 
 ```elixir
 defmodule MyApp.BasicSessionProcess do
@@ -318,52 +318,11 @@ defmodule MyApp.BasicSessionProcess do
 end
 ```
 
-**Best for:** Custom logic, complex state transitions, performance-critical applications.
+This is idiomatic Elixir and gives you full control over your state transitions.
 
-### 2. Agent-Based State (Simple and Fast)
+### Advanced: Redux-Style State (Optional)
 
-Use `Phoenix.SessionProcess.State` for simple key-value storage with Agent:
-
-```elixir
-defmodule MyApp.AgentSessionProcess do
-  use Phoenix.SessionProcess, :process
-
-  @impl true
-  def init(_init_arg) do
-    {:ok, state_pid} = Phoenix.SessionProcess.State.start_link(%{
-      user: nil,
-      preferences: %{},
-      cart: []
-    })
-    {:ok, %{state: state_pid}}
-  end
-
-  @impl true
-  def handle_call(:get_user, _from, %{state: state_pid} = state) do
-    user = Phoenix.SessionProcess.State.get(state_pid, :user)
-    {:reply, user, state}
-  end
-
-  @impl true
-  def handle_cast({:set_user, user}, %{state: state_pid} = state) do
-    Phoenix.SessionProcess.State.put(state_pid, :user, user)
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_cast({:add_to_cart, item}, %{state: state_pid} = state) do
-    cart = Phoenix.SessionProcess.State.get(state_pid, :cart)
-    Phoenix.SessionProcess.State.put(state_pid, :cart, [item | cart])
-    {:noreply, state}
-  end
-end
-```
-
-**Best for:** Simple state management, quick prototyping, lightweight applications.
-
-### 3. Redux-Style State (Predictable and Debuggable)
-
-Use `Phoenix.SessionProcess.Redux` for predictable state updates with actions and reducers:
+For complex applications requiring audit trails or time-travel debugging, you can optionally use `Phoenix.SessionProcess.Redux`:
 
 ```elixir
 defmodule MyApp.ReduxSessionProcess do
@@ -442,14 +401,184 @@ Phoenix.SessionProcess.cast("session_123", {:dispatch, {:add_to_cart, %{id: 101,
 {:ok, history} = Phoenix.SessionProcess.call("session_123", :get_history)
 ```
 
+#### Redux with Subscriptions and Selectors
+
+React to specific state changes with subscriptions and selectors:
+
+```elixir
+defmodule MyApp.ReactiveSession do
+  use Phoenix.SessionProcess, :process
+  alias Phoenix.SessionProcess.Redux
+  alias Phoenix.SessionProcess.Redux.Selector
+
+  @impl true
+  def init(_init_arg) do
+    redux = Redux.init_state(%{user: nil, cart: [], total: 0})
+
+    # Subscribe to user changes
+    redux =
+      Redux.subscribe(redux, fn state -> state.user end, fn user ->
+        IO.inspect(user, label: "User changed")
+      end)
+
+    # Subscribe with memoized selector for cart total
+    cart_total_selector =
+      Selector.create_selector(
+        [fn state -> state.cart end],
+        fn cart ->
+          Enum.reduce(cart, 0, fn item, acc -> acc + item.price end)
+        end
+      )
+
+    redux =
+      Redux.subscribe(redux, cart_total_selector, fn total ->
+        IO.inspect(total, label: "Cart total")
+      end)
+
+    {:ok, %{redux: redux}}
+  end
+
+  @impl true
+  def handle_call({:dispatch, action}, _from, state) do
+    new_redux = Redux.dispatch(state.redux, action, &reducer/2)
+    {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
+  end
+
+  defp reducer(state, action) do
+    case action do
+      {:set_user, user} -> %{state | user: user}
+      {:add_to_cart, item} -> %{state | cart: [item | state.cart]}
+      {:clear_cart} -> %{state | cart: []}
+      _ -> state
+    end
+  end
+end
+```
+
+#### Redux with LiveView
+
+Automatically update LiveView assigns from Redux state:
+
+```elixir
+defmodule MyAppWeb.ShoppingCartLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess.Redux.LiveView, as: ReduxLV
+  alias Phoenix.SessionProcess.Redux.Selector
+
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    if connected?(socket) do
+      # Define selectors
+      cart_count_selector = Selector.create_selector(
+        [fn state -> state.cart end],
+        fn cart -> length(cart) end
+      )
+
+      cart_total_selector = Selector.create_selector(
+        [fn state -> state.cart end],
+        fn cart -> Enum.reduce(cart, 0, &(&1.price + &2)) end
+      )
+
+      # Auto-subscribe to Redux changes
+      socket =
+        ReduxLV.assign_from_session(socket, session_id, %{
+          user: fn state -> state.user end,
+          cart_count: cart_count_selector,
+          cart_total: cart_total_selector
+        })
+
+      {:ok, assign(socket, session_id: session_id)}
+    else
+      {:ok, assign(socket, session_id: session_id, user: nil, cart_count: 0, cart_total: 0)}
+    end
+  end
+
+  # Handle automatic Redux assign updates
+  def handle_info({:redux_assign_update, key, value}, socket) do
+    {:noreply, ReduxLV.handle_assign_update(socket, key, value)}
+  end
+
+  def handle_event("add_item", %{"item" => item}, socket) do
+    ReduxLV.dispatch_to_session(socket.assigns.session_id, {:add_to_cart, item})
+    {:noreply, socket}
+  end
+
+  def render(assigns) do
+    ~H\"\"\"
+    <div>
+      <h2>Welcome, <%= @user.name %></h2>
+      <p>Cart: <%= @cart_count %> items</p>
+      <p>Total: $<%= @cart_total %></p>
+    </div>
+    \"\"\"
+  end
+end
+```
+
+#### Redux with PubSub (Distributed)
+
+Share state across nodes with Phoenix.PubSub:
+
+```elixir
+defmodule MyApp.DistributedSession do
+  use Phoenix.SessionProcess, :process
+  alias Phoenix.SessionProcess.Redux
+
+  @impl true
+  def init(arg) do
+    session_id = Keyword.get(arg, :session_id)
+
+    # Enable PubSub broadcasting
+    redux =
+      Redux.init_state(
+        %{data: %{}},
+        pubsub: MyApp.PubSub,
+        pubsub_topic: "session:\#{session_id}"
+      )
+
+    {:ok, %{redux: redux}}
+  end
+
+  @impl true
+  def handle_call({:dispatch, action}, _from, state) do
+    # Dispatch automatically broadcasts via PubSub
+    new_redux = Redux.dispatch(state.redux, action, &reducer/2)
+    {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
+  end
+
+  defp reducer(state, action) do
+    case action do
+      {:update, data} -> %{state | data: Map.merge(state.data, data)}
+      _ -> state
+    end
+  end
+end
+
+# Listen from any node
+defmodule MyApp.RemoteListener do
+  def listen(session_id) do
+    Redux.subscribe_to_broadcasts(
+      MyApp.PubSub,
+      "session:\#{session_id}",
+      fn %{action: action, state: state} ->
+        IO.inspect({action, state}, label: "Remote state change")
+      end
+    )
+  end
+end
+```
+
 **Redux Features:**
 - **Time-travel debugging** - Access complete action history
 - **Middleware support** - Add logging, validation, side effects
+- **Subscriptions** - React to specific state changes with callbacks
+- **Selectors with memoization** - Efficient derived state computation
+- **LiveView integration** - Automatic assign updates
+- **Phoenix.PubSub support** - Distributed state notifications across nodes
 - **State persistence** - Serialize and restore state
 - **Predictable updates** - All changes through explicit actions
-- **Developer tools** - Inspect actions and state changes
+- **Comprehensive telemetry** - Monitor Redux operations
 
-**Best for:** Complex applications, team collaboration, debugging requirements, state persistence needs.
+**Best for:** Complex applications, team collaboration, debugging requirements, state persistence needs, real-time reactive UIs.
 
 ### Comparison
 
@@ -491,6 +620,16 @@ The library emits comprehensive telemetry events for monitoring and debugging:
 ### Cleanup Events
 - `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
 - `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
+
+### Redux State Management Events
+- `[:phoenix, :session_process, :redux, :dispatch]` - When a Redux action is dispatched
+- `[:phoenix, :session_process, :redux, :subscribe]` - When a subscription is created
+- `[:phoenix, :session_process, :redux, :unsubscribe]` - When a subscription is removed
+- `[:phoenix, :session_process, :redux, :notification]` - When subscriptions are notified
+- `[:phoenix, :session_process, :redux, :selector_cache_hit]` - When selector cache is hit
+- `[:phoenix, :session_process, :redux, :selector_cache_miss]` - When selector cache misses
+- `[:phoenix, :session_process, :redux, :pubsub_broadcast]` - When state is broadcast via PubSub
+- `[:phoenix, :session_process, :redux, :pubsub_receive]` - When PubSub broadcast is received
 
 ### Example Telemetry Setup
 
