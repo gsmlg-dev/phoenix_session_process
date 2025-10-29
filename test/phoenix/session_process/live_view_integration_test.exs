@@ -7,40 +7,75 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
   @pubsub_name TestIntegrationPubSub
 
-  # Test session process that broadcasts state changes
-  defmodule IntegrationSessionProcess do
+  # Test session process that uses Redux-only state management
+  defmodule IntegrationReduxProcess do
     use Phoenix.SessionProcess, :process
+    alias Phoenix.SessionProcess.Redux
 
     @impl true
     def init(init_arg) do
-      {:ok, init_arg}
+      session_id = get_session_id()
+
+      redux =
+        Redux.init_state(
+          init_arg,
+          pubsub: TestIntegrationPubSub,
+          pubsub_topic: "session:#{session_id}:redux"
+        )
+
+      {:ok, %{redux: redux}}
+    end
+
+    @impl true
+    def handle_call(:get_redux_state, _from, state) do
+      {:reply, {:ok, state.redux}, state}
     end
 
     @impl true
     def handle_call(:get_state, _from, state) do
-      {:reply, {:ok, state}, state}
+      # For backward compatibility
+      {:reply, {:ok, Redux.get_state(state.redux)}, state}
     end
 
     @impl true
     def handle_call({:set_count, count}, _from, state) do
-      new_state = %{state | count: count}
-      # Broadcast to LiveViews
-      broadcast_state_change(new_state)
-      {:reply, :ok, new_state}
+      new_redux = Redux.dispatch(state.redux, {:set_count, count}, &reducer/2)
+      {:reply, :ok, %{state | redux: new_redux}}
     end
 
     @impl true
     def handle_call(:increment, _from, state) do
-      new_state = %{state | count: state.count + 1}
-      broadcast_state_change(new_state)
-      {:reply, :ok, new_state}
+      new_redux = Redux.dispatch(state.redux, :increment, &reducer/2)
+      {:reply, :ok, %{state | redux: new_redux}}
+    end
+
+    @impl true
+    def handle_call({:dispatch, action}, _from, state) do
+      new_redux = Redux.dispatch(state.redux, action, &reducer/2)
+      {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
     end
 
     @impl true
     def handle_cast({:set_user, user}, state) do
-      new_state = %{state | user: user}
-      broadcast_state_change(new_state)
-      {:noreply, new_state}
+      new_redux = Redux.dispatch(state.redux, {:set_user, user}, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
+    end
+
+    @impl true
+    def handle_cast({:dispatch_async, action}, state) do
+      new_redux = Redux.dispatch(state.redux, action, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
+    end
+
+    defp reducer(state, action) do
+      case action do
+        {:set_count, count} -> %{state | count: count}
+        :increment -> %{state | count: state.count + 1}
+        {:set_user, user} -> %{state | user: user}
+        {:update_state, new_state} -> new_state
+        {:add_item, item} -> %{state | items: [item | Map.get(state, :items, [])]}
+        _ -> state
+      end
     end
   end
 
@@ -66,7 +101,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
     defp receive_loop(socket, parent) do
       receive do
-        {:session_state_change, new_state} ->
+        {:redux_state_change, %{state: new_state}} ->
           send(parent, {:state_updated, self(), new_state})
           receive_loop(socket, parent)
 
@@ -84,13 +119,6 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       {:error, {:already_started, _pid}} -> :ok
     end
 
-    # Configure pubsub for broadcast_state_change
-    Application.put_env(:phoenix_session_process, :pubsub, @pubsub_name)
-
-    on_exit(fn ->
-      Application.delete_env(:phoenix_session_process, :pubsub)
-    end)
-
     %{pubsub: @pubsub_name}
   end
 
@@ -100,7 +128,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
       # Start session with initial state
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "alice", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "alice", count: 0})
 
       # Mount LiveView
       socket = %{assigns: %{}}
@@ -119,22 +147,22 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "bob", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "bob", count: 0})
 
       # Mount LiveView
       socket = %{assigns: %{}}
       {:ok, _socket, _state} = SessionLV.mount_session(socket, session_id, pubsub)
 
-      # Update session state
+      # Update session state via Redux dispatch
       SessionProcess.call(session_id, {:set_count, 42})
 
-      # LiveView should receive broadcast
-      assert_receive {:session_state_change, %{user: "bob", count: 42}}, 200
+      # LiveView should receive Redux broadcast
+      assert_receive {:redux_state_change, %{state: %{user: "bob", count: 42}}}, 200
 
       # Update again
       SessionProcess.call(session_id, :increment)
 
-      assert_receive {:session_state_change, %{user: "bob", count: 43}}, 200
+      assert_receive {:redux_state_change, %{state: %{user: "bob", count: 43}}}, 200
 
       # Cleanup
       SessionProcess.terminate(session_id)
@@ -144,7 +172,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "charlie", count: 5})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "charlie", count: 5})
 
       socket = %{assigns: %{}}
       {:ok, _socket, initial_state} = SessionLV.mount_session(socket, session_id, pubsub)
@@ -154,11 +182,11 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
       # Increment multiple times
       SessionProcess.call(session_id, :increment)
-      assert_receive {:session_state_change, state1}, 200
+      assert_receive {:redux_state_change, %{state: state1}}, 200
       assert state1.count == 6
 
       SessionProcess.call(session_id, :increment)
-      assert_receive {:session_state_change, state2}, 200
+      assert_receive {:redux_state_change, %{state: state2}}, 200
       assert state2.count == 7
 
       # Cleanup
@@ -171,7 +199,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "shared", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "shared", count: 0})
 
       # Start multiple mock LiveViews
       {:ok, lv1} = MockLiveView.start_link(session_id, pubsub, self())
@@ -200,7 +228,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "broadcast", count: 1})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "broadcast", count: 1})
 
       # Start 3 LiveViews
       {:ok, lv1} = MockLiveView.start_link(session_id, pubsub, self())
@@ -231,7 +259,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "test", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "test", count: 0})
 
       # Start 2 LiveViews
       {:ok, lv1} = MockLiveView.start_link(session_id, pubsub, self())
@@ -271,7 +299,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "temp", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "temp", count: 0})
 
       # Mount LiveView
       socket = %{assigns: %{}}
@@ -312,7 +340,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{
           user: "distributed",
           count: 0
         })
@@ -323,11 +351,11 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       # "Node 1" - subscribes to session
       node1 =
         spawn_link(fn ->
-          Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:state")
+          Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:redux")
           send(parent, {:node1_ready, self()})
 
           receive do
-            {:session_state_change, state} ->
+            {:redux_state_change, %{state: state}} ->
               send(parent, {:node1_received, state})
           end
         end)
@@ -335,11 +363,11 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       # "Node 2" - also subscribes
       node2 =
         spawn_link(fn ->
-          Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:state")
+          Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:redux")
           send(parent, {:node2_ready, self()})
 
           receive do
-            {:session_state_change, state} ->
+            {:redux_state_change, %{state: state}} ->
               send(parent, {:node2_received, state})
           end
         end)
@@ -364,29 +392,29 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session2 = SessionId.generate_unique_session_id()
 
       {:ok, _} =
-        SessionProcess.start(session1, IntegrationSessionProcess, %{user: "user1", count: 0})
+        SessionProcess.start(session1, IntegrationReduxProcess, %{user: "user1", count: 0})
 
       {:ok, _} =
-        SessionProcess.start(session2, IntegrationSessionProcess, %{user: "user2", count: 0})
+        SessionProcess.start(session2, IntegrationReduxProcess, %{user: "user2", count: 0})
 
       # Subscribe to both sessions
-      Phoenix.PubSub.subscribe(pubsub, "session:#{session1}:state")
-      Phoenix.PubSub.subscribe(pubsub, "session:#{session2}:state")
+      Phoenix.PubSub.subscribe(pubsub, "session:#{session1}:redux")
+      Phoenix.PubSub.subscribe(pubsub, "session:#{session2}:redux")
 
       # Update session1
       SessionProcess.call(session1, {:set_count, 100})
 
       # Should only receive update for session1
-      assert_receive {:session_state_change, %{user: "user1", count: 100}}, 200
+      assert_receive {:redux_state_change, %{state: %{user: "user1", count: 100}}}, 200
 
       # Update session2
       SessionProcess.call(session2, {:set_count, 200})
 
       # Should only receive update for session2
-      assert_receive {:session_state_change, %{user: "user2", count: 200}}, 200
+      assert_receive {:redux_state_change, %{state: %{user: "user2", count: 200}}}, 200
 
       # No extra messages
-      refute_receive {:session_state_change, _}, 100
+      refute_receive {:redux_state_change, _}, 100
 
       # Cleanup
       SessionProcess.terminate(session1)
@@ -400,7 +428,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
       # 1. User logs in - session starts
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{
           user: nil,
           count: 0,
           last_activity: nil
@@ -461,10 +489,10 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "fast", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "fast", count: 0})
 
       # Subscribe
-      Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:state")
+      Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:redux")
 
       # Rapid updates
       for i <- 1..10 do
@@ -473,7 +501,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
 
       # Should receive all updates (may arrive in batches)
       # Wait for final state
-      assert_receive {:session_state_change, %{count: 10}}, 500
+      assert_receive {:redux_state_change, %{state: %{count: 10}}}, 500
 
       # Cleanup
       SessionProcess.terminate(session_id)
@@ -483,7 +511,7 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       session_id = SessionId.generate_unique_session_id()
 
       {:ok, _pid} =
-        SessionProcess.start(session_id, IntegrationSessionProcess, %{user: "popular", count: 0})
+        SessionProcess.start(session_id, IntegrationReduxProcess, %{user: "popular", count: 0})
 
       # Start 10 subscribers
       parent = self()
@@ -491,11 +519,11 @@ defmodule Phoenix.SessionProcess.LiveViewIntegrationTest do
       subscribers =
         for i <- 1..10 do
           spawn_link(fn ->
-            Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:state")
+            Phoenix.PubSub.subscribe(pubsub, "session:#{session_id}:redux")
             send(parent, {:ready, i})
 
             receive do
-              {:session_state_change, state} ->
+              {:redux_state_change, %{state: state}} ->
                 send(parent, {:received, i, state})
             end
           end)

@@ -141,44 +141,56 @@ defmodule MyApp.SessionProcess do
 end
 ```
 
-### With LiveView Integration
+### With LiveView Integration (Redux-Based)
 
-Phoenix.SessionProcess provides PubSub-based LiveView integration for real-time state synchronization.
+Phoenix.SessionProcess provides Redux-based LiveView integration for real-time state synchronization. All state updates go through Redux dispatch actions, which automatically handle PubSub broadcasting.
 
-#### Session Process with Broadcasting
+#### Session Process with Redux
 
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
+  alias Phoenix.SessionProcess.Redux
 
   @impl true
   def init(_init_arg) do
-    {:ok, %{user: nil, count: 0}}
+    redux = Redux.init_state(
+      %{user: nil, count: 0},
+      pubsub: MyApp.PubSub,
+      pubsub_topic: "session:#{get_session_id()}:redux"
+    )
+    {:ok, %{redux: redux}}
   end
 
   @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, {:ok, state}, state}
+  def handle_call(:get_redux_state, _from, state) do
+    {:reply, {:ok, state.redux}, state}
   end
 
   @impl true
   def handle_cast({:set_user, user}, state) do
-    new_state = %{state | user: user}
-    # Broadcast state changes to all subscribers
-    broadcast_state_change(new_state)
-    {:noreply, new_state}
+    # Dispatch action - Redux handles all notifications automatically
+    new_redux = Redux.dispatch(state.redux, {:set_user, user}, &reducer/2)
+    {:noreply, %{state | redux: new_redux}}
   end
 
   @impl true
   def handle_cast(:increment, state) do
-    new_state = %{state | count: state.count + 1}
-    broadcast_state_change(new_state)
-    {:noreply, new_state}
+    new_redux = Redux.dispatch(state.redux, :increment, &reducer/2)
+    {:noreply, %{state | redux: new_redux}}
+  end
+
+  defp reducer(state, action) do
+    case action do
+      {:set_user, user} -> %{state | user: user}
+      :increment -> %{state | count: state.count + 1}
+      _ -> state
+    end
   end
 end
 ```
 
-#### LiveView with Session Integration
+#### LiveView with Redux Integration
 
 ```elixir
 defmodule MyAppWeb.DashboardLive do
@@ -186,7 +198,7 @@ defmodule MyAppWeb.DashboardLive do
   alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
   def mount(_params, %{"session_id" => session_id}, socket) do
-    # Subscribe to session state and get initial state
+    # Subscribe to Redux state and get initial state
     case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
       {:ok, socket, state} ->
         {:ok, assign(socket, state: state, session_id: session_id)}
@@ -196,8 +208,8 @@ defmodule MyAppWeb.DashboardLive do
     end
   end
 
-  # Automatically receive state updates
-  def handle_info({:session_state_change, new_state}, socket) do
+  # Automatically receive Redux state updates
+  def handle_info({:redux_state_change, %{state: new_state}}, socket) do
     {:noreply, assign(socket, state: new_state)}
   end
 
@@ -224,6 +236,8 @@ Add PubSub module to your config:
 config :phoenix_session_process,
   pubsub: MyApp.PubSub  # Required for LiveView integration
 ```
+
+**Important**: LiveView integration requires Redux for state management. Redux automatically broadcasts state changes via PubSub when actions are dispatched.
 
 ## API Reference
 

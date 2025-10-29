@@ -1,19 +1,19 @@
 defmodule Phoenix.SessionProcess.LiveView do
   @moduledoc """
-  LiveView integration helpers for session processes.
+  LiveView integration helpers for Redux-based session processes.
 
-  Provides PubSub-based state synchronization between session processes
-  and LiveViews, replacing the legacy manual process monitoring approach.
+  Provides PubSub-based state synchronization between Redux session processes
+  and LiveViews using the Redux dispatch mechanism.
 
-  ## Why PubSub?
+  ## Why Redux?
 
-  The PubSub-based approach offers several advantages over manual process monitoring:
+  The Redux-based approach enforces a single, predictable way to update state:
 
-  - **Decoupling**: LiveViews don't need to directly monitor session processes
-  - **Distributed**: Works across nodes in a cluster
-  - **Selective Updates**: Only notify LiveViews when relevant state changes
-  - **Simpler Cleanup**: Automatic unsubscribe on LiveView termination
-  - **Better Performance**: No process links or monitors to manage
+  - **Single Source of Truth**: All state updates go through Redux.dispatch
+  - **Automatic Notifications**: Redux handles subscriptions and PubSub broadcasts
+  - **Predictable Updates**: Actions and reducers provide clear state transitions
+  - **Distributed**: Works across nodes via Phoenix.PubSub
+  - **No Manual Broadcasting**: State changes are automatically broadcast
 
   ## Basic Usage
 
@@ -22,7 +22,7 @@ defmodule Phoenix.SessionProcess.LiveView do
         alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
         def mount(_params, %{"session_id" => session_id}, socket) do
-          # Get initial state and subscribe to changes
+          # Get initial state and subscribe to Redux changes
           case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
             {:ok, socket, initial_state} ->
               {:ok, assign(socket, state: initial_state)}
@@ -32,8 +32,8 @@ defmodule Phoenix.SessionProcess.LiveView do
           end
         end
 
-        # Handle state changes from session
-        def handle_info({:session_state_change, new_state}, socket) do
+        # Handle Redux state changes
+        def handle_info({:redux_state_change, %{state: new_state}}, socket) do
           {:noreply, assign(socket, state: new_state)}
         end
 
@@ -52,53 +52,69 @@ defmodule Phoenix.SessionProcess.LiveView do
 
   ## Session Process Integration
 
-  Your session process should broadcast state changes:
+  Your session process must use Redux for state management:
 
       defmodule MyApp.SessionProcess do
         use Phoenix.SessionProcess, :process
+        alias Phoenix.SessionProcess.Redux
 
         @impl true
         def init(_init_arg) do
-          {:ok, %{user: nil, count: 0}}
+          redux = Redux.init_state(
+            %{user: nil, count: 0},
+            pubsub: MyApp.PubSub,
+            pubsub_topic: "session:\#{get_session_id()}:redux"
+          )
+          {:ok, %{redux: redux}}
         end
 
         @impl true
         def handle_cast({:increment}, state) do
-          new_state = %{state | count: state.count + 1}
-          # Broadcast to all subscribers
-          broadcast_state_change(new_state)
-          {:noreply, new_state}
+          new_redux = Redux.dispatch(state.redux, {:increment}, &reducer/2)
+          {:noreply, %{state | redux: new_redux}}
+        end
+
+        @impl true
+        def handle_call(:get_redux_state, _from, state) do
+          {:reply, {:ok, state.redux}, state}
+        end
+
+        defp reducer(state, action) do
+          case action do
+            {:increment} -> %{state | count: state.count + 1}
+            _ -> state
+          end
         end
       end
 
   ## Custom State Messages
 
-  You can customize which message key retrieves the state:
+  You can customize which message key retrieves the Redux state:
 
       {:ok, socket, state} = SessionLV.mount_session(
         socket,
         session_id,
         MyApp.PubSub,
-        :get_current_state  # Custom message
+        :get_current_redux_state  # Custom message
       )
   """
 
   alias Phoenix.SessionProcess
 
   @doc """
-  Mount a LiveView to a session process.
+  Mount a LiveView to a Redux-based session process.
 
-  Gets the current state from the session and subscribes to state changes
-  via PubSub. This should be called during LiveView mount.
+  Gets the current Redux state from the session and subscribes to Redux state
+  changes via PubSub. This should be called during LiveView mount.
 
   ## Parameters
   - `socket` - The LiveView socket
   - `session_id` - The session ID to connect to
   - `pubsub` - The PubSub module (e.g., MyApp.PubSub)
-  - `state_key` - Optional message key for state retrieval (default: :get_state)
+  - `state_key` - Optional message key for Redux state retrieval (default: :get_redux_state)
 
   ## Returns
-  - `{:ok, socket, state}` - Successfully mounted with initial state
+  - `{:ok, socket, state}` - Successfully mounted with initial Redux state
   - `{:error, reason}` - Failed to mount (session not found, etc.)
 
   ## Examples
@@ -113,24 +129,26 @@ defmodule Phoenix.SessionProcess.LiveView do
         end
       end
 
-      # With custom state message
+      # With custom Redux state message
       {:ok, socket, state} = SessionLV.mount_session(
         socket,
         session_id,
         MyApp.PubSub,
-        :get_current_state
+        :get_current_redux_state
       )
   """
   @spec mount_session(term(), String.t(), module(), atom()) ::
           {:ok, term(), any()} | {:error, term()}
-  def mount_session(socket, session_id, pubsub, state_key \\ :get_state) do
-    # Subscribe to PubSub topic
-    topic = "session:#{session_id}:state"
+  def mount_session(socket, session_id, pubsub, state_key \\ :get_redux_state) do
+    # Subscribe to Redux PubSub topic
+    topic = "session:#{session_id}:redux"
     Phoenix.PubSub.subscribe(pubsub, topic)
 
-    # Get initial state
+    # Get initial Redux state
     case SessionProcess.call(session_id, state_key) do
-      {:ok, state} ->
+      {:ok, redux} ->
+        # Extract state from Redux struct
+        state = redux.current_state
         # Store session info in socket assigns for cleanup
         socket = assign_session_info(socket, session_id, pubsub)
         {:ok, socket, state}
@@ -162,9 +180,9 @@ defmodule Phoenix.SessionProcess.LiveView do
   end
 
   @doc """
-  Unmount a LiveView from its session process.
+  Unmount a LiveView from its Redux-based session process.
 
-  Unsubscribes from PubSub topic. This should be called in the LiveView's
+  Unsubscribes from Redux PubSub topic. This should be called in the LiveView's
   terminate callback.
 
   ## Parameters
@@ -184,7 +202,7 @@ defmodule Phoenix.SessionProcess.LiveView do
   def unmount_session(socket) do
     with session_id when not is_nil(session_id) <- socket.assigns[:__session_id__],
          pubsub when not is_nil(pubsub) <- socket.assigns[:__session_pubsub__] do
-      topic = "session:#{session_id}:state"
+      topic = "session:#{session_id}:redux"
       Phoenix.PubSub.unsubscribe(pubsub, topic)
     end
 
@@ -248,33 +266,33 @@ defmodule Phoenix.SessionProcess.LiveView do
   end
 
   @doc """
-  Get the PubSub topic for a session.
+  Get the Redux PubSub topic for a session.
 
-  Returns the topic string that the session broadcasts to.
+  Returns the Redux topic string that the session broadcasts to.
 
   ## Parameters
   - `session_id` - The session ID
 
   ## Returns
-  The PubSub topic string
+  The Redux PubSub topic string
 
   ## Examples
 
       topic = SessionLV.session_topic("user_123")
-      # => "session:user_123:state"
+      # => "session:user_123:redux"
 
       # Subscribe manually
       Phoenix.PubSub.subscribe(MyApp.PubSub, SessionLV.session_topic(session_id))
   """
   @spec session_topic(String.t()) :: String.t()
   def session_topic(session_id) do
-    "session:#{session_id}:state"
+    "session:#{session_id}:redux"
   end
 
   @doc """
-  Subscribe to a session's state changes without mounting.
+  Subscribe to a session's Redux state changes without mounting.
 
-  Useful when you want to subscribe to state changes but don't need
+  Useful when you want to subscribe to Redux state changes but don't need
   the initial state or full mount/unmount lifecycle.
 
   ## Parameters
@@ -291,7 +309,7 @@ defmodule Phoenix.SessionProcess.LiveView do
         {:ok, socket}
       end
 
-      def handle_info({:session_state_change, state}, socket) do
+      def handle_info({:redux_state_change, %{state: state}}, socket) do
         {:noreply, assign(socket, remote_state: state)}
       end
   """

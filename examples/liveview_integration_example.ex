@@ -1,10 +1,11 @@
 defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
   @moduledoc """
-  Complete example of PubSub-based LiveView integration with session processes.
+  Complete example of Redux-based LiveView integration with session processes.
 
   This example demonstrates:
-  - Session process that broadcasts state changes
-  - LiveView that subscribes to session state
+  - Session process using Redux for state management
+  - Redux automatically broadcasts state changes via PubSub
+  - LiveView that subscribes to Redux state
   - Real-time state synchronization
   - Proper cleanup and error handling
   - Distributed session support (works across nodes)
@@ -34,14 +35,14 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
            │  1. mount_session()       │
            │ <─────────────────────────┤
            │                           │
-           │  2. get_state             │
+           │  2. :get_redux_state      │
            │ <─────────────────────────┤
            │                           │
-           │  3. {:ok, state}          │
+           │  3. {:ok, redux}          │
            ├──────────────────────────>│
            │                           │
-           │  4. subscribe to PubSub   │
-           │         topic             │
+           │  4. subscribe to Redux    │
+           │     PubSub topic          │
            │                           │
   ┌────────┴────────┐         ┌────────┴─────────┐
   │  Phoenix.PubSub │         │  Subscribed!     │
@@ -50,16 +51,16 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
            │  5. User action           │
            │ <─────────────────────────┤
            │                           │
-           │  6. Update state          │
+           │  6. Redux.dispatch()      │
            ├─┐                         │
            │ │                         │
            │<┘                         │
            │                           │
-           │  7. broadcast_state_      │
-           │     change(new_state)     │
+           │  7. Redux broadcasts      │
+           │     automatically         │
            │                           │
-           │  8. {:session_state_      │
-           │      change, state}       │
+           │  8. {:redux_state_        │
+           │      change, message}     │
            ├──────────────────────────>│
            │                           │
            │                  9. Update UI
@@ -73,26 +74,34 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
 
   defmodule ShoppingCartSession do
     @moduledoc """
-    Example session process for a shopping cart.
+    Example session process using Redux for state management.
 
     Demonstrates:
-    - State management with maps
-    - Broadcasting state changes after updates
+    - Redux state initialization with PubSub
+    - Dispatching actions via Redux
+    - Automatic state broadcasting (no manual calls)
     - Standard GenServer callbacks
     - Helper functions for common operations
     """
     use Phoenix.SessionProcess, :process
+    alias Phoenix.SessionProcess.Redux
 
     @impl true
     def init(_init_arg) do
-      initial_state = %{
-        user_id: nil,
-        cart_items: [],
-        total: 0,
-        last_updated: DateTime.utc_now()
-      }
+      # Initialize Redux state with PubSub broadcasting
+      redux =
+        Redux.init_state(
+          %{
+            user_id: nil,
+            cart_items: [],
+            total: 0,
+            last_updated: DateTime.utc_now()
+          },
+          pubsub: MyApp.PubSub,
+          pubsub_topic: "session:#{get_session_id()}:redux"
+        )
 
-      {:ok, initial_state}
+      {:ok, %{redux: redux}}
     end
 
     # -------------------------------------------------------------------------
@@ -100,76 +109,88 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     # -------------------------------------------------------------------------
 
     @impl true
-    def handle_call(:get_state, _from, state) do
-      {:reply, {:ok, state}, state}
+    def handle_call(:get_redux_state, _from, state) do
+      {:reply, {:ok, state.redux}, state}
     end
 
     @impl true
     def handle_call({:get_cart_total}, _from, state) do
-      {:reply, {:ok, state.total}, state}
+      current_state = Redux.get_state(state.redux)
+      {:reply, {:ok, current_state.total}, state}
     end
 
     # -------------------------------------------------------------------------
-    # Asynchronous Casts (with broadcasting)
+    # Asynchronous Casts (with Redux dispatch)
     # -------------------------------------------------------------------------
 
     @impl true
     def handle_cast({:set_user, user_id}, state) do
-      new_state = %{state | user_id: user_id, last_updated: DateTime.utc_now()}
-
-      # Broadcast to all LiveViews subscribed to this session
-      broadcast_state_change(new_state)
-
-      {:noreply, new_state}
+      # Dispatch Redux action - automatically broadcasts to all subscribers
+      new_redux = Redux.dispatch(state.redux, {:set_user, user_id}, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
     end
 
     @impl true
     def handle_cast({:add_item, item}, state) do
-      new_items = [item | state.cart_items]
-      new_total = calculate_total(new_items)
-
-      new_state = %{
-        state
-        | cart_items: new_items,
-          total: new_total,
-          last_updated: DateTime.utc_now()
-      }
-
-      # Broadcast the updated cart state
-      broadcast_state_change(new_state)
-
-      {:noreply, new_state}
+      # Dispatch Redux action - broadcasting happens automatically
+      new_redux = Redux.dispatch(state.redux, {:add_item, item}, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
     end
 
     @impl true
     def handle_cast({:remove_item, item_id}, state) do
-      new_items = Enum.reject(state.cart_items, &(&1.id == item_id))
-      new_total = calculate_total(new_items)
-
-      new_state = %{
-        state
-        | cart_items: new_items,
-          total: new_total,
-          last_updated: DateTime.utc_now()
-      }
-
-      broadcast_state_change(new_state)
-
-      {:noreply, new_state}
+      new_redux = Redux.dispatch(state.redux, {:remove_item, item_id}, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
     end
 
     @impl true
     def handle_cast(:clear_cart, state) do
-      new_state = %{
-        state
-        | cart_items: [],
-          total: 0,
-          last_updated: DateTime.utc_now()
-      }
+      new_redux = Redux.dispatch(state.redux, :clear_cart, &reducer/2)
+      {:noreply, %{state | redux: new_redux}}
+    end
 
-      broadcast_state_change(new_state)
+    # -------------------------------------------------------------------------
+    # Redux Reducer
+    # -------------------------------------------------------------------------
 
-      {:noreply, new_state}
+    defp reducer(state, action) do
+      case action do
+        {:set_user, user_id} ->
+          %{state | user_id: user_id, last_updated: DateTime.utc_now()}
+
+        {:add_item, item} ->
+          new_items = [item | state.cart_items]
+          new_total = calculate_total(new_items)
+
+          %{
+            state
+            | cart_items: new_items,
+              total: new_total,
+              last_updated: DateTime.utc_now()
+          }
+
+        {:remove_item, item_id} ->
+          new_items = Enum.reject(state.cart_items, &(&1.id == item_id))
+          new_total = calculate_total(new_items)
+
+          %{
+            state
+            | cart_items: new_items,
+              total: new_total,
+              last_updated: DateTime.utc_now()
+          }
+
+        :clear_cart ->
+          %{
+            state
+            | cart_items: [],
+              total: 0,
+              last_updated: DateTime.utc_now()
+          }
+
+        _ ->
+          state
+      end
     end
 
     # -------------------------------------------------------------------------
@@ -189,11 +210,11 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
 
   defmodule DashboardLive do
     @moduledoc """
-    Example LiveView that integrates with session process.
+    Example LiveView that integrates with Redux-based session process.
 
     Demonstrates:
-    - Mounting with session subscription
-    - Receiving real-time state updates
+    - Mounting with Redux session subscription
+    - Receiving real-time Redux state updates
     - Sending messages to session
     - Proper cleanup on unmount
     """
@@ -208,7 +229,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     # -------------------------------------------------------------------------
 
     def mount(_params, %{"session_id" => session_id}, socket) do
-      # Subscribe to session and get initial state
+      # Subscribe to Redux session and get initial state
       case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
         {:ok, socket, state} ->
           # Successfully mounted - store session_id and state
@@ -239,11 +260,11 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     end
 
     # -------------------------------------------------------------------------
-    # Receiving State Updates
+    # Receiving Redux State Updates
     # -------------------------------------------------------------------------
 
-    def handle_info({:session_state_change, new_state}, socket) do
-      # Automatically update UI when session state changes
+    def handle_info({:redux_state_change, %{state: new_state}}, socket) do
+      # Automatically update UI when Redux state changes
       socket = assign(socket, :cart_state, new_state)
       {:noreply, socket}
     end
@@ -264,7 +285,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
       }
 
       # Send async to session (fire-and-forget)
-      # State update will come via {:session_state_change, ...}
+      # Redux state update will come via {:redux_state_change, ...}
       SessionLV.dispatch_async(session_id, {:add_item, item})
 
       {:noreply, socket}
@@ -285,11 +306,12 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     end
 
     def handle_event("refresh", _params, socket) do
-      # Manually request current state (synchronous)
+      # Manually request current Redux state (synchronous)
       session_id = socket.assigns.session_id
 
-      case SessionLV.dispatch(session_id, :get_state) do
-        {:ok, state} ->
+      case SessionLV.dispatch(session_id, :get_redux_state) do
+        {:ok, redux} ->
+          state = redux.current_state
           socket = assign(socket, :cart_state, state)
           {:noreply, socket}
 
@@ -304,7 +326,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     # -------------------------------------------------------------------------
 
     def terminate(_reason, socket) do
-      # Clean up PubSub subscription
+      # Clean up Redux PubSub subscription
       SessionLV.unmount_session(socket)
       :ok
     end
@@ -318,7 +340,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     def render_template do
       """
       <div class="dashboard">
-        <h1>Shopping Cart</h1>
+        <h1>Shopping Cart (Redux)</h1>
 
         <%= if @error do %>
           <div class="alert alert-danger"><%= @error %></div>
@@ -366,7 +388,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
 
   defmodule PageController do
     @moduledoc """
-    Example controller showing how to start session processes.
+    Example controller showing how to start Redux-based session processes.
     """
 
     # In a real app: use MyAppWeb, :controller
@@ -377,7 +399,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
       session_id = conn.assigns.session_id
 
       # Start or reuse existing session
-      case SessionProcess.start(session_id, ShoppingCartSession) do
+      case Phoenix.SessionProcess.start(session_id, ShoppingCartSession) do
         {:ok, _pid} ->
           # Session started successfully
           # render(conn, "index.html")
@@ -404,29 +426,29 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
 
   defmodule DistributedExample do
     @moduledoc """
-    Example showing distributed session state across nodes.
+    Example showing distributed Redux session state across nodes.
 
-    When running multiple nodes, PubSub automatically broadcasts
-    state changes to all subscribed LiveViews on all nodes.
+    When running multiple nodes, Redux automatically broadcasts
+    state changes via PubSub to all subscribed LiveViews on all nodes.
     """
 
     def start_distributed_session(session_id, node1, node2) do
-      # On node1: Start session
+      # On node1: Start session with Redux
       :rpc.call(node1, Phoenix.SessionProcess, :start, [
         session_id,
         ShoppingCartSession
       ])
 
-      # On node2: LiveView can subscribe and receive updates
-      # The PubSub broadcast will work across nodes automatically
+      # On node2: LiveView can subscribe and receive Redux updates
+      # The Redux PubSub broadcast will work across nodes automatically
 
-      # On node1: Update state
+      # On node1: Update state via Redux dispatch
       :rpc.call(node1, Phoenix.SessionProcess, :cast, [
         session_id,
         {:add_item, %{id: 1, name: "Widget", price: 1000, quantity: 2}}
       ])
 
-      # On node2: LiveView receives {:session_state_change, new_state}
+      # On node2: LiveView receives {:redux_state_change, %{state: new_state, ...}}
       # automatically via PubSub
     end
   end
@@ -437,7 +459,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
 
   defmodule LiveViewIntegrationTest do
     @moduledoc """
-    Example test showing how to test LiveView session integration.
+    Example test showing how to test Redux-based LiveView session integration.
     """
 
     # use ExUnit.Case, async: true
@@ -447,21 +469,21 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     @endpoint MyAppWeb.Endpoint
 
     # setup do
-    #   # Start a test session
+    #   # Start a test session with Redux
     #   session_id = "test_session_#{System.unique_integer([:positive])}"
     #   {:ok, _pid} = Phoenix.SessionProcess.start(session_id, ShoppingCartSession)
     #
     #   %{session_id: session_id}
     # end
 
-    # test "LiveView receives state updates", %{session_id: session_id} do
+    # test "LiveView receives Redux state updates", %{session_id: session_id} do
     #   # Mount LiveView
     #   {:ok, view, _html} = live(conn, "/dashboard")
     #
     #   # Verify initial state
     #   assert has_element?(view, ".cart-summary", "Items: 0")
     #
-    #   # Update session state
+    #   # Update session state via Redux dispatch
     #   Phoenix.SessionProcess.cast(session_id, {:add_item, %{
     #     id: 1,
     #     name: "Test Item",
@@ -469,7 +491,7 @@ defmodule Phoenix.SessionProcess.Examples.LiveViewIntegration do
     #     quantity: 1
     #   }})
     #
-    #   # LiveView should update automatically
+    #   # LiveView should update automatically via Redux PubSub
     #   assert has_element?(view, ".cart-summary", "Items: 1")
     #   assert has_element?(view, ".cart-item", "Test Item")
     # end

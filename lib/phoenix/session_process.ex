@@ -576,60 +576,6 @@ defmodule Phoenix.SessionProcess do
         end
       end
 
-      @doc """
-      Broadcasts state changes to all PubSub subscribers.
-
-      This function broadcasts the current state to all LiveViews or other
-      processes subscribed to the session's PubSub topic. Use this after
-      state updates to notify subscribers of changes.
-
-      ## Parameters
-      - `state` - The current state to broadcast
-      - `pubsub` - Optional PubSub module. If not provided, uses the configured
-        `:phoenix_session_process, :pubsub` value
-
-      ## Returns
-      The unchanged state (for easy piping in handle_* callbacks)
-
-      ## Examples
-
-          def handle_cast({:set_user, user}, state) do
-            new_state = %{state | user: user}
-            {:noreply, broadcast_state_change(new_state)}
-          end
-
-          # With custom PubSub module
-          def handle_call(:update, _from, state) do
-            new_state = update_state(state)
-            broadcast_state_change(new_state, MyApp.PubSub)
-            {:reply, :ok, new_state}
-          end
-      """
-      def broadcast_state_change(state, pubsub \\ nil) do
-        pubsub_module = pubsub || Application.get_env(:phoenix_session_process, :pubsub)
-
-        if pubsub_module do
-          session_id = get_session_id()
-          topic = "session:#{session_id}:state"
-          Phoenix.PubSub.broadcast(pubsub_module, topic, {:session_state_change, state})
-        end
-
-        state
-      end
-
-      @doc """
-      Returns the PubSub topic for this session.
-
-      The topic follows the pattern `"session:<session_id>:state"`.
-
-      ## Examples
-
-          topic = session_topic()
-          # => "session:user_123:state"
-      """
-      def session_topic do
-        "session:#{get_session_id()}:state"
-      end
     end
   end
 

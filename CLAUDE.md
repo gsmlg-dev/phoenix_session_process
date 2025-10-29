@@ -91,8 +91,9 @@ The library is organized into several logical groups:
 1. **Phoenix.SessionProcess** (lib/phoenix/session_process.ex:1)
    - Main module providing the public API
    - Delegates to ProcessSupervisor for actual process management
-   - Provides the `:process` macro which includes PubSub broadcast helpers
-   - The macro injects: `broadcast_state_change/1-2` and `session_topic/0` functions
+   - Provides the `:process` macro for basic GenServer functionality
+   - The macro injects: `get_session_id/0` helper function
+   - **State updates ONLY via Redux.dispatch** - no manual broadcast helpers
    - Note: `:process_link` is deprecated - use `:process` instead
    - Key functions: `start/1-3`, `call/2-3`, `cast/2`, `terminate/1`, `started?/1`, `list_session/0`
 
@@ -118,12 +119,12 @@ The library is organized into several logical groups:
    - Runs cleanup tasks periodically
 
 6. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
-   - PubSub-based LiveView integration for session processes
-   - **Recommended approach** for connecting LiveViews to session state
-   - Key functions: `mount_session/3-4`, `unmount_session/1`, `dispatch/2`, `subscribe/2`
-   - Automatically handles subscription/unsubscription and initial state loading
+   - Redux-based LiveView integration for session processes
+   - **Requires Redux** for state management
+   - Key functions: `mount_session/3-4` (default state_key: :get_redux_state), `unmount_session/1`, `dispatch/2`, `subscribe/2`
+   - Subscribes to Redux PubSub topic: `"session:#{session_id}:redux"`
+   - Receives state changes as `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
    - Works across distributed nodes via Phoenix.PubSub
-   - Simpler and more maintainable than manual process monitoring
 
 7. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
    - Optional Redux-style state management with actions, reducers, subscriptions, and selectors
@@ -152,12 +153,18 @@ The library is organized into several logical groups:
 
 - Uses Registry for bidirectional lookups (session_id ↔ pid, pid ↔ module)
 - DynamicSupervisor for on-demand process creation
-- `:process` macro injects GenServer boilerplate and PubSub broadcast helpers
-- **PubSub-based LiveView integration** (recommended):
-  - Session processes broadcast state changes via `broadcast_state_change/1-2`
+- `:process` macro injects GenServer boilerplate
+- **Redux-only state management**:
+  - All state updates go through `Redux.dispatch(redux, action, reducer)`
+  - Redux automatically handles subscriptions and PubSub broadcasts
+  - No manual `broadcast_state_change` or `session_topic` helpers
+  - Single, predictable way to update state
+- **Redux-based LiveView integration** (required for LiveView):
+  - Session processes use Redux with PubSub configuration
   - LiveViews subscribe using `Phoenix.SessionProcess.LiveView.mount_session/3-4`
+  - Redux PubSub topic: `"session:#{session_id}:redux"`
+  - Message format: `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
   - Works across distributed nodes
-  - Cleaner separation of concerns vs manual process monitoring
 - Telemetry events for all lifecycle operations (start, stop, call, cast, cleanup, errors)
 - Comprehensive error handling with Phoenix.SessionProcess.Error module
 
@@ -189,29 +196,41 @@ Configuration options:
 5. Communicate using call/cast operations
 6. For LiveView integration, use `Phoenix.SessionProcess.LiveView` helpers
 
-### LiveView Integration Example
+### LiveView Integration Example (Redux-Only)
 
 **Session Process:**
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
+  alias Phoenix.SessionProcess.Redux
 
   @impl true
   def init(_) do
-    {:ok, %{count: 0, user: nil}}
+    redux = Redux.init_state(
+      %{count: 0, user: nil},
+      pubsub: MyApp.PubSub,
+      pubsub_topic: "session:#{get_session_id()}:redux"
+    )
+    {:ok, %{redux: redux}}
   end
 
   @impl true
   def handle_cast({:increment}, state) do
-    new_state = %{state | count: state.count + 1}
-    # Broadcast to LiveViews
-    broadcast_state_change(new_state)
-    {:noreply, new_state}
+    # Dispatch action - Redux handles all notifications automatically
+    new_redux = Redux.dispatch(state.redux, {:increment}, &reducer/2)
+    {:noreply, %{state | redux: new_redux}}
   end
 
   @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, {:ok, state}, state}
+  def handle_call(:get_redux_state, _from, state) do
+    {:reply, {:ok, state.redux}, state}
+  end
+
+  defp reducer(state, action) do
+    case action do
+      {:increment} -> %{state | count: state.count + 1}
+      _ -> state
+    end
   end
 end
 ```
@@ -223,7 +242,7 @@ defmodule MyAppWeb.DashboardLive do
   alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
   def mount(_params, %{"session_id" => session_id}, socket) do
-    # Subscribe and get initial state
+    # Subscribe and get initial Redux state
     case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
       {:ok, socket, state} ->
         {:ok, assign(socket, state: state)}
@@ -232,8 +251,8 @@ defmodule MyAppWeb.DashboardLive do
     end
   end
 
-  # Receive state updates
-  def handle_info({:session_state_change, new_state}, socket) do
+  # Receive Redux state updates
+  def handle_info({:redux_state_change, %{state: new_state}}, socket) do
     {:noreply, assign(socket, state: new_state)}
   end
 
@@ -244,18 +263,40 @@ defmodule MyAppWeb.DashboardLive do
 end
 ```
 
-## State Management Options
+## State Management Architecture
 
-The library provides two state management approaches:
+Phoenix.SessionProcess enforces Redux-based state management for LiveView integration.
 
-1. **Standard GenServer State** (Recommended) - Full control with standard GenServer callbacks
+### Core Principle
+All state updates go through Redux dispatch actions.
+
+### State Update Flow
+1. Action dispatched: `Redux.dispatch(redux, action, reducer)`
+2. Reducer updates state
+3. Redux notifies subscriptions (automatic)
+4. Redux broadcasts via PubSub (automatic, if configured)
+5. LiveViews receive state updates
+
+### No Manual Broadcasting
+The library does NOT provide manual broadcast helpers. All notifications
+happen automatically through Redux dispatch.
+
+### When to Use Redux
+- **Required** if using LiveView integration
+- **Optional** for session-only processes without LiveView
+
+### State Management Options
+
+1. **Redux-based State** (Required for LiveView) - Predictable state updates with actions/reducers
+   - Use `Redux.dispatch(redux, action, reducer)` to update state
+   - Automatic PubSub broadcasting to LiveViews
+   - Time-travel debugging, middleware, action history available
+   - Use when you need LiveView integration or audit trails
+
+2. **Standard GenServer State** (Session-only) - Full control with standard GenServer callbacks
    - Use `handle_call`, `handle_cast`, and `handle_info` to manage state
-   - Simple, idiomatic Elixir - this is what you should use for 95% of cases
-
-2. **Phoenix.SessionProcess.Redux** (Optional, Advanced) - Redux pattern for complex state machines
-   - Actions, reducers, middleware, time-travel debugging
-   - Only use if you need audit trails or complex state machine logic
-   - Adds complexity - most applications don't need this
+   - Simple, idiomatic Elixir
+   - Use when no LiveView integration is needed
 
 ## Telemetry and Error Handling
 
