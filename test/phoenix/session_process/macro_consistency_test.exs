@@ -16,7 +16,7 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
   end
 
   defmodule TestProcessLinkWithArg do
-    use Phoenix.SessionProcess, :process_link
+    use Phoenix.SessionProcess, :process
 
     def init(arg) do
       {:ok, %{initialized_with: arg}}
@@ -41,7 +41,7 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
     end
   end
 
-  describe ":process_link macro with :arg parameter" do
+  describe ":process macro with :arg parameter (renamed from :process_link)" do
     test "accepts initialization argument with same parameter name" do
       session_id = "test_process_link_with_arg_#{:rand.uniform(10000)}"
       init_arg = %{user_id: 456, data: "test"}
@@ -55,8 +55,8 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
     end
   end
 
-  describe "both macros use consistent parameter names" do
-    test ":process and :process_link both work with :arg" do
+  describe ":process macro uses consistent parameter names" do
+    test "both test modules work with :arg" do
       session_id_1 = "consistency_test_1_#{:rand.uniform(10000)}"
       session_id_2 = "consistency_test_2_#{:rand.uniform(10000)}"
 

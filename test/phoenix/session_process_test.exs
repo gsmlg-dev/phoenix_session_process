@@ -181,7 +181,7 @@ defmodule Phoenix.SessionProcessTest do
     end
   end
 
-  describe "get_session_id/0 in :process_link macro" do
+  describe "get_session_id/0 with LiveView monitoring" do
     test "returns correct session_id from within session process" do
       session_id = SessionId.generate_unique_session_id()
       {:ok, _pid} = SessionProcess.start(session_id, TestProcessLink, %{value: 0})

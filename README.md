@@ -110,7 +110,8 @@ config :phoenix_session_process,
   session_process: MyApp.SessionProcess,  # Default session module
   max_sessions: 10_000,                   # Maximum concurrent sessions
   session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
-  rate_limit: 100                        # Sessions per minute limit
+  rate_limit: 100,                       # Sessions per minute limit
+  pubsub: MyApp.PubSub                   # PubSub module for LiveView integration
 ```
 
 ## Usage Examples
@@ -142,44 +143,86 @@ end
 
 ### With LiveView Integration
 
-Create a session process that monitors LiveView processes:
+Phoenix.SessionProcess provides PubSub-based LiveView integration for real-time state synchronization.
+
+#### Session Process with Broadcasting
 
 ```elixir
-defmodule MyApp.SessionProcessWithLiveView do
-  use Phoenix.SessionProcess, :process_link
+defmodule MyApp.SessionProcess do
+  use Phoenix.SessionProcess, :process
 
   @impl true
   def init(_init_arg) do
-    {:ok, %{user: nil, live_views: []}}
+    {:ok, %{user: nil, count: 0}}
   end
 
   @impl true
-  def handle_call(:get_user, _from, state) do
-    {:reply, state.user, state}
+  def handle_call(:get_state, _from, state) do
+    {:reply, {:ok, state}, state}
   end
 
   @impl true
   def handle_cast({:set_user, user}, state) do
-    {:noreply, %{state | user: user}}
+    new_state = %{state | user: user}
+    # Broadcast state changes to all subscribers
+    broadcast_state_change(new_state)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_cast(:increment, state) do
+    new_state = %{state | count: state.count + 1}
+    broadcast_state_change(new_state)
+    {:noreply, new_state}
   end
 end
 ```
 
-In your LiveView:
+#### LiveView with Session Integration
 
 ```elixir
-defmodule MyAppWeb.UserLive do
-  use MyAppWeb, :live_view
+defmodule MyAppWeb.DashboardLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
-  def mount(_params, %{"session_id" => session_id} = _session, socket) do
-    Phoenix.SessionProcess.cast(session_id, {:monitor, self()})
-    {:ok, assign(socket, session_id: session_id)}
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    # Subscribe to session state and get initial state
+    case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
+      {:ok, socket, state} ->
+        {:ok, assign(socket, state: state, session_id: session_id)}
+
+      {:error, _reason} ->
+        {:ok, redirect(socket, to: "/login")}
+    end
   end
 
-  def handle_info(:session_expired, socket) do
-    {:noreply, redirect(socket, to: "/login")}
+  # Automatically receive state updates
+  def handle_info({:session_state_change, new_state}, socket) do
+    {:noreply, assign(socket, state: new_state)}
+  end
+
+  # Send messages to session
+  def handle_event("increment", _params, socket) do
+    SessionLV.dispatch_async(socket.assigns.session_id, :increment)
+    {:noreply, socket}
+  end
+
+  # Clean up subscription on terminate
+  def terminate(_reason, socket) do
+    SessionLV.unmount_session(socket)
+    :ok
   end
 end
+```
+
+#### Configuration for LiveView
+
+Add PubSub module to your config:
+
+```elixir
+# config/config.exs
+config :phoenix_session_process,
+  pubsub: MyApp.PubSub  # Required for LiveView integration
 ```
 
 ## API Reference

@@ -98,11 +98,11 @@ defmodule Phoenix.SessionProcess do
   ### With LiveView Integration
 
       defmodule MyApp.SessionProcessWithLiveView do
-        use Phoenix.SessionProcess, :process_link
+        use Phoenix.SessionProcess, :process
 
         @impl true
         def init(_init_arg) do
-          {:ok, %{user: nil, live_views: []}}
+          {:ok, %{user: nil}}
         end
 
         # Automatically monitors LiveView processes
@@ -575,57 +575,83 @@ defmodule Phoenix.SessionProcess do
             raise "Session process not yet registered or registration failed"
         end
       end
+
+      @doc """
+      Broadcasts state changes to all PubSub subscribers.
+
+      This function broadcasts the current state to all LiveViews or other
+      processes subscribed to the session's PubSub topic. Use this after
+      state updates to notify subscribers of changes.
+
+      ## Parameters
+      - `state` - The current state to broadcast
+      - `pubsub` - Optional PubSub module. If not provided, uses the configured
+        `:phoenix_session_process, :pubsub` value
+
+      ## Returns
+      The unchanged state (for easy piping in handle_* callbacks)
+
+      ## Examples
+
+          def handle_cast({:set_user, user}, state) do
+            new_state = %{state | user: user}
+            {:noreply, broadcast_state_change(new_state)}
+          end
+
+          # With custom PubSub module
+          def handle_call(:update, _from, state) do
+            new_state = update_state(state)
+            broadcast_state_change(new_state, MyApp.PubSub)
+            {:reply, :ok, new_state}
+          end
+      """
+      def broadcast_state_change(state, pubsub \\ nil) do
+        pubsub_module = pubsub || Application.get_env(:phoenix_session_process, :pubsub)
+
+        if pubsub_module do
+          session_id = get_session_id()
+          topic = "session:#{session_id}:state"
+          Phoenix.PubSub.broadcast(pubsub_module, topic, {:session_state_change, state})
+        end
+
+        state
+      end
+
+      @doc """
+      Returns the PubSub topic for this session.
+
+      The topic follows the pattern `"session:<session_id>:state"`.
+
+      ## Examples
+
+          topic = session_topic()
+          # => "session:user_123:state"
+      """
+      def session_topic do
+        "session:#{get_session_id()}:state"
+      end
     end
   end
 
   defmacro __using__(:process_link) do
     quote do
-      use GenServer
+      IO.warn(
+        """
+        :process_link is deprecated. Please use :process instead.
 
-      def start_link(opts) do
-        arg = Keyword.get(opts, :arg, %{})
-        name = Keyword.get(opts, :name)
-        GenServer.start_link(__MODULE__, arg, name: name)
-      end
+        All session processes now include LiveView monitoring functionality by default.
+        LiveView integration now uses subscriptions to process state, so the explicit
+        :process_link option is no longer necessary.
 
-      def get_session_id do
-        current_pid = self()
+        Change:
+          use Phoenix.SessionProcess, :process_link
+        To:
+          use Phoenix.SessionProcess, :process
+        """,
+        Macro.Env.stacktrace(__ENV__)
+      )
 
-        case Registry.select(unquote(SessionRegistry), [
-               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
-             ])
-             |> Enum.at(0) do
-          {session_id, _pid} ->
-            session_id
-
-          nil ->
-            raise "Session process not yet registered or registration failed"
-        end
-      end
-
-      def handle_cast({:monitor, pid}, state) do
-        new_state =
-          state |> Map.update(:__live_view__, [pid], fn views -> [pid | views] end)
-
-        Process.monitor(pid)
-        {:noreply, new_state}
-      end
-
-      @impl true
-      def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-        new_state =
-          state
-          |> Map.update(:__live_view__, [], fn views -> views |> Enum.filter(&(&1 != pid)) end)
-
-        {:noreply, new_state}
-      end
-
-      @impl true
-      def terminate(_reason, state) do
-        state
-        |> Map.get(:__live_view__, [])
-        |> Enum.each(&Process.send_after(&1, :session_expired, 0))
-      end
+      use Phoenix.SessionProcess, :process
     end
   end
 end

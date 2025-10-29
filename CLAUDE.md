@@ -66,11 +66,14 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.Cleanup` - TTL-based cleanup
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
+**LiveView Integration**:
+- `Phoenix.SessionProcess.LiveView` - PubSub-based LiveView integration helpers (recommended)
+
 **State Management Utilities**:
 - `Phoenix.SessionProcess.Redux` - Optional Redux-style state with actions/reducers, subscriptions, and selectors (advanced use cases)
 - `Phoenix.SessionProcess.Redux.Selector` - Memoized selectors for efficient derived state
 - `Phoenix.SessionProcess.Redux.Subscription` - Subscription management for reactive state changes
-- `Phoenix.SessionProcess.Redux.LiveView` - LiveView integration helpers
+- `Phoenix.SessionProcess.Redux.LiveView` - Redux-specific LiveView integration helpers
 - `Phoenix.SessionProcess.MigrationExamples` - Migration examples for Redux
 - `Phoenix.SessionProcess.ReduxExamples` - Comprehensive Redux usage examples
 
@@ -88,7 +91,9 @@ The library is organized into several logical groups:
 1. **Phoenix.SessionProcess** (lib/phoenix/session_process.ex:1)
    - Main module providing the public API
    - Delegates to ProcessSupervisor for actual process management
-   - Provides two macros: `:process` (basic) and `:process_link` (with LiveView monitoring)
+   - Provides the `:process` macro which includes PubSub broadcast helpers
+   - The macro injects: `broadcast_state_change/1-2` and `session_topic/0` functions
+   - Note: `:process_link` is deprecated - use `:process` instead
    - Key functions: `start/1-3`, `call/2-3`, `cast/2`, `terminate/1`, `started?/1`, `list_session/0`
 
 2. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
@@ -112,12 +117,20 @@ The library is organized into several logical groups:
    - Schedules session expiration on creation
    - Runs cleanup tasks periodically
 
-6. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
+6. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
+   - PubSub-based LiveView integration for session processes
+   - **Recommended approach** for connecting LiveViews to session state
+   - Key functions: `mount_session/3-4`, `unmount_session/1`, `dispatch/2`, `subscribe/2`
+   - Automatically handles subscription/unsubscription and initial state loading
+   - Works across distributed nodes via Phoenix.PubSub
+   - Simpler and more maintainable than manual process monitoring
+
+7. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
    - Optional Redux-style state management with actions, reducers, subscriptions, and selectors
    - Provides time-travel debugging, middleware support, and action history
    - **Redux.Selector**: Memoized selectors with reselect-style composition for efficient derived state
    - **Redux.Subscription**: Subscribe to state changes with optional selectors (only notifies when selected values change)
-   - **Redux.LiveView**: Helper module for LiveView integration with automatic assign updates
+   - **Redux.LiveView**: Helper module for Redux-specific LiveView integration
    - **Phoenix.PubSub integration**: Broadcast state changes across nodes for distributed applications
    - **Comprehensive telemetry**: Monitor Redux operations (dispatch, subscribe, selector cache hits/misses, PubSub broadcasts)
    - Best for complex applications requiring reactive UIs, predictable state updates, audit trails, or distributed state
@@ -139,8 +152,12 @@ The library is organized into several logical groups:
 
 - Uses Registry for bidirectional lookups (session_id ↔ pid, pid ↔ module)
 - DynamicSupervisor for on-demand process creation
-- Macros inject GenServer boilerplate and provide `get_session_id/0` helper
-- `:process_link` macro adds LiveView monitoring: sessions monitor LiveView processes and send `:session_expired` message on termination
+- `:process` macro injects GenServer boilerplate and PubSub broadcast helpers
+- **PubSub-based LiveView integration** (recommended):
+  - Session processes broadcast state changes via `broadcast_state_change/1-2`
+  - LiveViews subscribe using `Phoenix.SessionProcess.LiveView.mount_session/3-4`
+  - Works across distributed nodes
+  - Cleaner separation of concerns vs manual process monitoring
 - Telemetry events for all lifecycle operations (start, stop, call, cast, cleanup, errors)
 - Comprehensive error handling with Phoenix.SessionProcess.Error module
 
@@ -152,7 +169,8 @@ config :phoenix_session_process,
   session_process: MySessionProcess,  # Default session module
   max_sessions: 10_000,               # Maximum concurrent sessions
   session_ttl: 3_600_000,            # Session TTL in milliseconds (1 hour)
-  rate_limit: 100                    # Sessions per minute limit
+  rate_limit: 100,                   # Sessions per minute limit
+  pubsub: MyApp.PubSub               # Optional: PubSub module for LiveView integration
 ```
 
 Configuration options:
@@ -160,14 +178,71 @@ Configuration options:
 - `max_sessions`: Maximum concurrent sessions (defaults to 10,000)
 - `session_ttl`: Session TTL in milliseconds (defaults to 1 hour)
 - `rate_limit`: Sessions per minute limit (defaults to 100)
+- `pubsub`: PubSub module for broadcasting state changes (optional, required for LiveView integration)
 
 ## Usage in Phoenix Applications
 
 1. Add supervisor to application supervision tree
 2. Add SessionId plug after fetch_session in router
-3. Define custom session process modules using `:process` or `:process_link` macros
+3. Define custom session process modules using the `:process` macro
 4. Start processes with session IDs
 5. Communicate using call/cast operations
+6. For LiveView integration, use `Phoenix.SessionProcess.LiveView` helpers
+
+### LiveView Integration Example
+
+**Session Process:**
+```elixir
+defmodule MyApp.SessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init(_) do
+    {:ok, %{count: 0, user: nil}}
+  end
+
+  @impl true
+  def handle_cast({:increment}, state) do
+    new_state = %{state | count: state.count + 1}
+    # Broadcast to LiveViews
+    broadcast_state_change(new_state)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_call(:get_state, _from, state) do
+    {:reply, {:ok, state}, state}
+  end
+end
+```
+
+**LiveView:**
+```elixir
+defmodule MyAppWeb.DashboardLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess.LiveView, as: SessionLV
+
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    # Subscribe and get initial state
+    case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
+      {:ok, socket, state} ->
+        {:ok, assign(socket, state: state)}
+      {:error, _} ->
+        {:ok, socket}
+    end
+  end
+
+  # Receive state updates
+  def handle_info({:session_state_change, new_state}, socket) do
+    {:noreply, assign(socket, state: new_state)}
+  end
+
+  def terminate(_reason, socket) do
+    SessionLV.unmount_session(socket)
+    :ok
+  end
+end
+```
 
 ## State Management Options
 

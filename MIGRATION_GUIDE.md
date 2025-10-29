@@ -34,8 +34,8 @@ Add the Redux module to your session process:
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
-  use Phoenix.SessionProcess.Redux
-  
+  alias Phoenix.SessionProcess.Redux
+
   # ... rest of your module
 end
 ```
@@ -127,7 +127,7 @@ Replace all state manipulation with Redux actions:
 ```elixir
 defmodule MyApp.ShoppingCartProcess do
   use Phoenix.SessionProcess, :process
-  use Phoenix.SessionProcess.Redux
+  alias Phoenix.SessionProcess.Redux
 
   @impl true
   def init(_args) do
@@ -180,7 +180,7 @@ Add logging and validation middleware:
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
-  use Phoenix.SessionProcess.Redux
+  alias Phoenix.SessionProcess.Redux
 
   @impl true
   def init(_args) do
@@ -209,7 +209,7 @@ Use action history for debugging:
 ```elixir
 defmodule MyApp.DebugSessionProcess do
   use Phoenix.SessionProcess, :process
-  use Phoenix.SessionProcess.Redux
+  alias Phoenix.SessionProcess.Redux
 
   @impl true
   def init(_args) do
