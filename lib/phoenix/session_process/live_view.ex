@@ -189,7 +189,12 @@ defmodule Phoenix.SessionProcess.LiveView do
   """
   @spec mount_store(term(), String.t(), function(), atom()) ::
           {:ok, term(), any()} | {:error, term()}
-  def mount_store(socket, session_id, selector \\ &Function.identity/1, event_name \\ :state_changed) do
+  def mount_store(
+        socket,
+        session_id,
+        selector \\ &Function.identity/1,
+        event_name \\ :state_changed
+      ) do
     # Subscribe using SessionProcess's built-in subscription
     case SessionProcess.subscribe(session_id, selector, event_name, self()) do
       {:ok, sub_id} ->

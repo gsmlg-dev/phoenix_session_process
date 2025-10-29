@@ -816,6 +816,7 @@ defmodule Phoenix.SessionProcess do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(:process) do
     quote do
       use GenServer
