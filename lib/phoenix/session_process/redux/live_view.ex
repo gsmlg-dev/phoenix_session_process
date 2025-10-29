@@ -5,69 +5,79 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
   Provides convenient functions to connect Redux state to LiveView assigns
   with automatic updates when state changes.
 
-  ## Basic Usage
+  ## New Message-Based API (Recommended)
 
       defmodule MyAppWeb.DashboardLive do
         use Phoenix.LiveView
         alias Phoenix.SessionProcess.Redux.LiveView, as: ReduxLV
 
-        def mount(_params, session, socket) do
-          session_id = session["session_id"]
-
-          # Subscribe to Redux state changes
-          socket = ReduxLV.subscribe_to_session(socket, session_id)
-
-          {:ok, socket}
-        end
-
-        # Redux state changes trigger this
-        def handle_info({:redux_state_change, state}, socket) do
-          {:noreply, assign(socket, :user, state.user)}
-        end
-      end
-
-  ## With Selectors
-
-      defmodule MyAppWeb.DashboardLive do
-        use Phoenix.LiveView
-        alias Phoenix.SessionProcess.Redux.LiveView, as: ReduxLV
-        alias Phoenix.SessionProcess.Redux.Selector
-
-        def mount(_params, session, socket) do
-          session_id = session["session_id"]
-
-          # Only update when user changes
-          user_selector = fn state -> state.user end
-
-          socket = ReduxLV.subscribe_to_session(
+        def mount(_params, %{"session_id" => session_id}, socket) do
+          # Subscribe to Redux state with selector
+          socket = ReduxLV.mount_session(
             socket,
             session_id,
-            user_selector,
-            fn user -> assign(socket, :user, user) end
+            fn state -> state.user end,
+            :user_changed
           )
 
           {:ok, socket}
         end
+
+        # Automatically receives current user on mount
+        # Then receives updates when user changes
+        def handle_info({:user_changed, user}, socket) do
+          {:noreply, assign(socket, :user, user)}
+        end
       end
 
-  ## Automatic Assign Updates
+  ## Key Features
+
+  - **Immediate State Delivery**: Receives current state on mount
+  - **Smart Updates**: Only notified when selected data changes
+  - **Custom Events**: Choose your own event names
+  - **Automatic Cleanup**: Subscriptions cleaned up when LiveView terminates
+
+  ## With Composed Selectors
 
       defmodule MyAppWeb.DashboardLive do
         use Phoenix.LiveView
         alias Phoenix.SessionProcess.Redux.LiveView, as: ReduxLV
 
-        def mount(_params, session, socket) do
-          session_id = session["session_id"]
+        def mount(_params, %{"session_id" => session_id}, socket) do
+          # Memoized selector for filtered items
+          filtered_selector = ReduxLV.create_selector(
+            [fn state -> state.items end, fn state -> state.filter end],
+            fn items, filter -> Enum.filter(items, &(&1.type == filter)) end
+          )
 
-          # Automatically map state to assigns
-          socket = ReduxLV.assign_from_session(socket, session_id, %{
-            user: fn state -> state.user end,
-            count: fn state -> state.count end,
-            items: fn state -> state.items end
-          })
+          socket = ReduxLV.mount_session(
+            socket,
+            session_id,
+            filtered_selector,
+            :items_filtered
+          )
 
           {:ok, socket}
         end
+
+        def handle_info({:items_filtered, items}, socket) do
+          {:noreply, assign(socket, :filtered_items, items)}
+        end
+      end
+
+  ## Session Process Integration
+
+  Your session process should handle the `:redux_subscribe` message:
+
+      def handle_call({:redux_subscribe, selector, pid, event_name}, _from, state) do
+        {:ok, sub_id, redux} = Redux.subscribe(state.redux, selector, pid, event_name)
+        {:reply, {:ok, sub_id}, %{state | redux: redux}}
+      end
+
+      # Handle process monitoring
+      def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+        redux = Redux.remove_subscription_by_monitor(state.redux, ref)
+        {:noreply, %{state | redux: redux}}
       end
 
   ## Distributed LiveView
@@ -77,9 +87,7 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
         use Phoenix.LiveView
         alias Phoenix.SessionProcess.Redux.LiveView, as: ReduxLV
 
-        def mount(_params, session, socket) do
-          session_id = session["session_id"]
-
+        def mount(_params, %{"session_id" => session_id}, socket) do
           socket = ReduxLV.subscribe_to_pubsub(
             socket,
             MyApp.PubSub,
@@ -101,7 +109,60 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
   alias Phoenix.SessionProcess.Redux.Selector
 
   @doc """
-  Subscribe to Redux state changes from a session process.
+  Mount a session with Redux state subscription (new API).
+
+  Subscribes to Redux state changes and automatically receives current state.
+  The subscriber will receive messages with the custom event name.
+
+  ## Parameters
+
+  - `socket` - LiveView socket
+  - `session_id` - Session process ID
+  - `selector_fn` - Function to extract data from state
+  - `event_name` - Event name for messages (defaults to :redux_state_change)
+
+  ## Examples
+
+      def mount(_params, %{"session_id" => session_id}, socket) do
+        socket = ReduxLV.mount_session(
+          socket,
+          session_id,
+          fn state -> state.user end,
+          :user_changed
+        )
+        {:ok, socket}
+      end
+
+      # Receive both initial and update messages
+      def handle_info({:user_changed, user}, socket) do
+        {:noreply, assign(socket, :user, user)}
+      end
+
+  """
+  @spec mount_session(term(), String.t(), Selector.selector(), atom()) ::
+          term()
+  def mount_session(socket, session_id, selector_fn, event_name \\ :redux_state_change) do
+    # Subscribe via session process with new API
+    case SessionProcess.call(session_id, {:redux_subscribe, selector_fn, self(), event_name}) do
+      {:ok, sub_id} ->
+        # Store subscription ID for cleanup
+        if Code.ensure_loaded?(Phoenix.Component) do
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(Phoenix.Component, :assign, [socket, :__redux_subscription_id__, sub_id])
+        else
+          Map.update!(socket, :assigns, &Map.put(&1, :__redux_subscription_id__, sub_id))
+        end
+
+      {:error, _reason} ->
+        # Session not found or doesn't have Redux state
+        socket
+    end
+  end
+
+  @doc """
+  Subscribe to Redux state changes from a session process (legacy callback API).
+
+  **DEPRECATED**: Use `mount_session/4` instead for the new message-based API.
 
   Sends `{:redux_state_change, state}` messages to the LiveView process
   on every state change.
@@ -127,7 +188,9 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
   end
 
   @doc """
-  Subscribe to Redux state changes with a selector.
+  Subscribe to Redux state changes with a selector (legacy callback API).
+
+  **DEPRECATED**: Use `mount_session/4` instead for the new message-based API.
 
   Only sends messages when the selected value changes.
 
@@ -150,8 +213,8 @@ defmodule Phoenix.SessionProcess.Redux.LiveView do
     # Get the Redux state from session process
     case SessionProcess.call(session_id, :get_redux_state) do
       {:ok, redux} ->
-        # Subscribe to changes
-        updated_redux = Redux.subscribe(redux, selector, callback)
+        # Subscribe to changes (legacy API)
+        updated_redux = Redux.subscribe_callback(redux, selector, callback)
 
         # Store updated redux back (if using stateful approach)
         # Note: This assumes the session process handles :update_redux_state

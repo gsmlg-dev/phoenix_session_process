@@ -116,11 +116,19 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
 
       # Verify we're subscribed by broadcasting a Redux message
       topic = "session:#{session_id}:redux"
-      test_message = %{action: :test, state: %{test: "data"}, timestamp: System.system_time(:millisecond)}
+
+      test_message = %{
+        action: :test,
+        state: %{test: "data"},
+        timestamp: System.system_time(:millisecond)
+      }
+
       Phoenix.PubSub.broadcast(@pubsub_name, topic, {:redux_state_change, test_message})
 
       # We should receive the broadcast
-      assert_receive {:redux_state_change, %{action: :test, state: %{test: "data"}, timestamp: _}}, 100
+      assert_receive {:redux_state_change,
+                      %{action: :test, state: %{test: "data"}, timestamp: _}},
+                     100
     end
 
     test "sets socket assigns correctly", %{session_id: session_id} do
@@ -145,7 +153,13 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
 
       # Verify we're not subscribed to the topic
       topic = "session:#{nonexistent_session}:redux"
-      test_message = %{action: :test, state: %{test: "data"}, timestamp: System.system_time(:millisecond)}
+
+      test_message = %{
+        action: :test,
+        state: %{test: "data"},
+        timestamp: System.system_time(:millisecond)
+      }
+
       Phoenix.PubSub.broadcast(@pubsub_name, topic, {:redux_state_change, test_message})
 
       # We should NOT receive the broadcast
@@ -194,7 +208,13 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
 
       # Verify subscription works
       topic = "session:#{session_id}:redux"
-      before_msg = %{action: :test, state: %{test: "before"}, timestamp: System.system_time(:millisecond)}
+
+      before_msg = %{
+        action: :test,
+        state: %{test: "before"},
+        timestamp: System.system_time(:millisecond)
+      }
+
       Phoenix.PubSub.broadcast(@pubsub_name, topic, {:redux_state_change, before_msg})
       assert_receive {:redux_state_change, %{state: %{test: "before"}}}, 100
 
@@ -202,7 +222,12 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
       assert :ok = SessionLV.unmount_session(socket)
 
       # Verify we're no longer subscribed
-      after_msg = %{action: :test, state: %{test: "after"}, timestamp: System.system_time(:millisecond)}
+      after_msg = %{
+        action: :test,
+        state: %{test: "after"},
+        timestamp: System.system_time(:millisecond)
+      }
+
       Phoenix.PubSub.broadcast(@pubsub_name, topic, {:redux_state_change, after_msg})
       refute_receive {:redux_state_change, %{state: %{test: "after"}}}, 100
     end
@@ -253,7 +278,8 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
 
   describe "dispatch_async/2" do
     test "successfully casts to session process", %{session_id: session_id} do
-      result = SessionLV.dispatch_async(session_id, {:dispatch_async, {:put, :async_key, "async_value"}})
+      result =
+        SessionLV.dispatch_async(session_id, {:dispatch_async, {:put, :async_key, "async_value"}})
 
       assert result == :ok
 

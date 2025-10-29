@@ -551,9 +551,278 @@ defmodule Phoenix.SessionProcess do
   defp calculate_average_memory(_memory, 0), do: 0
   defp calculate_average_memory(memory, total), do: div(memory, total)
 
+  # ============================================================================
+  # Redux Store API
+  # ============================================================================
+
+  @doc """
+  Dispatch an action to a session process.
+
+  The action will be processed through all registered reducers and subscribers
+  will be notified if their selected state changed.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `action` - Action to dispatch (any term)
+  - `opts` - Options keyword list:
+    - `:async` - If true, dispatch asynchronously (default: false)
+    - `:timeout` - Call timeout in ms (default: 5000)
+
+  ## Returns
+  - `{:ok, new_state}` - Synchronous dispatch returns new state
+  - `:ok` - Asynchronous dispatch returns immediately
+  - `{:error, reason}` - If session not found or dispatch fails
+
+  ## Examples
+
+      # Synchronous dispatch
+      {:ok, new_state} = SessionProcess.dispatch(session_id, {:increment, 1})
+
+      # Asynchronous dispatch
+      :ok = SessionProcess.dispatch(session_id, {:increment, 1}, async: true)
+
+      # With timeout
+      {:ok, new_state} = SessionProcess.dispatch(session_id, action, timeout: 10_000)
+  """
+  @spec dispatch(binary(), any(), keyword()) :: {:ok, map()} | :ok | {:error, term()}
+  def dispatch(session_id, action, opts \\ []) do
+    async = Keyword.get(opts, :async, false)
+    timeout = Keyword.get(opts, :timeout, 5000)
+
+    if async do
+      case ProcessSupervisor.session_process_pid(session_id) do
+        nil ->
+          {:error, {:session_not_found, session_id}}
+
+        _pid ->
+          cast(session_id, {:dispatch_action, action})
+          :ok
+      end
+    else
+      call(session_id, {:dispatch_action, action}, timeout)
+    end
+  end
+
+  @doc """
+  Subscribe to state changes with a selector function.
+
+  The selector will be called with the current state immediately, and you'll
+  receive a message with the selected value. Then, on each state change, if the
+  selected value changes, you'll receive another message.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `selector` - Function that extracts data from state: `(state) -> selected_data`
+  - `event_name` - Atom for the message event (default: :state_changed)
+  - `pid` - Process to receive notifications (default: self())
+
+  ## Returns
+  - `{:ok, subscription_id}` - Unique reference for this subscription
+  - `{:error, reason}` - If session not found
+
+  ## Messages
+  Subscriber receives: `{event_name, selected_data}`
+
+  ## Examples
+
+      # Subscribe to user data
+      {:ok, sub_id} = SessionProcess.subscribe(
+        session_id,
+        fn state -> state.user end,
+        :user_changed
+      )
+
+      # Immediately receive current user
+      receive do
+        {:user_changed, user} -> IO.puts("Current user: \#{inspect(user)}")
+      end
+
+      # Receive updates when user changes
+      receive do
+        {:user_changed, new_user} -> IO.puts("User updated: \#{inspect(new_user)}")
+      end
+
+      # Later, unsubscribe
+      SessionProcess.unsubscribe(session_id, sub_id)
+  """
+  @spec subscribe(binary(), function(), atom(), pid()) :: {:ok, reference()} | {:error, term()}
+  def subscribe(session_id, selector, event_name \\ :state_changed, pid \\ self())
+      when is_function(selector, 1) and is_atom(event_name) and is_pid(pid) do
+    call(session_id, {:subscribe_with_selector, selector, event_name, pid})
+  end
+
+  @doc """
+  Unsubscribe from state changes.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `subscription_id` - Reference returned from `subscribe/4`
+
+  ## Returns
+  - `:ok` - Successfully unsubscribed
+  - `{:error, reason}` - If session not found
+
+  ## Examples
+
+      {:ok, sub_id} = SessionProcess.subscribe(session_id, selector, :event)
+      # ... later ...
+      :ok = SessionProcess.unsubscribe(session_id, sub_id)
+  """
+  @spec unsubscribe(binary(), reference()) :: :ok | {:error, term()}
+  def unsubscribe(session_id, subscription_id) when is_reference(subscription_id) do
+    call(session_id, {:unsubscribe, subscription_id})
+  end
+
+  @doc """
+  Register a reducer function for the session.
+
+  Reducers are called in registration order when actions are dispatched.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `name` - Atom identifier for this reducer
+  - `reducer_fn` - Function with signature: `(action, state) -> new_state`
+
+  ## Returns
+  - `:ok` - Reducer registered successfully
+  - `{:error, reason}` - If session not found
+
+  ## Examples
+
+      defmodule MyReducers do
+        def counter_reducer(action, state) do
+          case action do
+            :increment -> %{state | count: state.count + 1}
+            :decrement -> %{state | count: state.count - 1}
+            {:set, value} -> %{state | count: value}
+            _ -> state
+          end
+        end
+      end
+
+      SessionProcess.register_reducer(
+        session_id,
+        :counter,
+        &MyReducers.counter_reducer/2
+      )
+  """
+  @spec register_reducer(binary(), atom(), function()) :: :ok | {:error, term()}
+  def register_reducer(session_id, name, reducer_fn)
+      when is_atom(name) and is_function(reducer_fn, 2) do
+    call(session_id, {:register_reducer, name, reducer_fn})
+  end
+
+  @doc """
+  Register a named selector for the session.
+
+  Named selectors can be retrieved and reused by name.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `name` - Atom identifier for this selector
+  - `selector_fn` - Function with signature: `(state) -> selected_data`
+
+  ## Returns
+  - `:ok` - Selector registered successfully
+  - `{:error, reason}` - If session not found
+
+  ## Examples
+
+      SessionProcess.register_selector(
+        session_id,
+        :user_name,
+        fn state -> get_in(state, [:user, :name]) end
+      )
+
+      # Later, use the selector
+      name = SessionProcess.select(session_id, :user_name)
+  """
+  @spec register_selector(binary(), atom(), function()) :: :ok | {:error, term()}
+  def register_selector(session_id, name, selector_fn)
+      when is_atom(name) and is_function(selector_fn, 1) do
+    call(session_id, {:register_selector, name, selector_fn})
+  end
+
+  @doc """
+  Get the current state, optionally applying a selector.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `selector` - Optional selector function or registered selector name
+
+  ## Returns
+  - State or selected data
+  - `{:error, reason}` - If session not found
+
+  ## Examples
+
+      # Get full state
+      state = SessionProcess.get_state(session_id)
+
+      # Get with inline selector
+      user = SessionProcess.get_state(session_id, fn s -> s.user end)
+
+      # Get with registered selector
+      user = SessionProcess.get_state(session_id, :current_user)
+  """
+  @spec get_state(binary(), function() | atom() | nil) :: any()
+  def get_state(session_id, selector \\ nil) do
+    case call(session_id, :get_state) do
+      {:ok, state} when is_nil(selector) ->
+        state
+
+      {:ok, state} when is_function(selector, 1) ->
+        selector.(state)
+
+      {:ok, state} when is_atom(selector) ->
+        # Get registered selector and apply it
+        case call(session_id, {:get_selector, selector}) do
+          {:ok, selector_fn} -> selector_fn.(state)
+          _ -> state
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Apply a registered selector by name.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `selector_name` - Atom name of registered selector
+
+  ## Returns
+  - Selected data
+  - `{:error, reason}` - If session or selector not found
+
+  ## Examples
+
+      SessionProcess.register_selector(session_id, :count, fn s -> s.count end)
+      count = SessionProcess.select(session_id, :count)
+  """
+  @spec select(binary(), atom()) :: any()
+  def select(session_id, selector_name) when is_atom(selector_name) do
+    case call(session_id, {:get_selector, selector_name}) do
+      {:ok, selector_fn} ->
+        case call(session_id, :get_state) do
+          {:ok, state} -> selector_fn.(state)
+          error -> error
+        end
+
+      error ->
+        error
+    end
+  end
+
   defmacro __using__(:process) do
     quote do
       use GenServer
+
+      # ========================================================================
+      # GenServer Boilerplate
+      # ========================================================================
 
       def start_link(opts) do
         arg = Keyword.get(opts, :arg, %{})
@@ -576,6 +845,220 @@ defmodule Phoenix.SessionProcess do
         end
       end
 
+      # ========================================================================
+      # Redux Infrastructure - Default Implementation
+      # ========================================================================
+
+      @doc """
+      Initialize session process state with Redux infrastructure.
+
+      Override `user_init/1` to provide your application's initial state.
+      """
+      @impl true
+      def init(arg) do
+        # Call user's initialization
+        user_state = user_init(arg)
+
+        # Wrap in Redux infrastructure
+        state = %{
+          # User's application state
+          app_state: user_state,
+
+          # Redux infrastructure (internal, prefixed with _redux_)
+          _redux_reducers: %{},
+          _redux_selectors: %{},
+          _redux_subscriptions: [],
+          _redux_middleware: [],
+          _redux_history: [],
+          _redux_max_history: 100
+        }
+
+        {:ok, state}
+      end
+
+      @doc """
+      User-defined initialization.
+
+      Return your application's initial state as a map.
+
+      ## Examples
+
+          def user_init(_arg) do
+            %{count: 0, user: nil, items: []}
+          end
+      """
+      def user_init(_arg), do: %{}
+
+      # ========================================================================
+      # Redux Dispatch Handlers
+      # ========================================================================
+
+      @impl true
+      def handle_call({:dispatch_action, action}, _from, state) do
+        {new_app_state, new_subscriptions} = dispatch_with_reducers(action, state)
+
+        new_state = %{
+          state
+          | app_state: new_app_state,
+            _redux_subscriptions: new_subscriptions,
+            _redux_history: add_to_history(action, state._redux_history, state._redux_max_history)
+        }
+
+        {:reply, {:ok, new_app_state}, new_state}
+      end
+
+      @impl true
+      def handle_cast({:dispatch_action, action}, state) do
+        {new_app_state, new_subscriptions} = dispatch_with_reducers(action, state)
+
+        new_state = %{
+          state
+          | app_state: new_app_state,
+            _redux_subscriptions: new_subscriptions
+        }
+
+        {:noreply, new_state}
+      end
+
+      # ========================================================================
+      # Subscription Handlers
+      # ========================================================================
+
+      @impl true
+      def handle_call({:subscribe_with_selector, selector, event_name, pid}, _from, state) do
+        # Generate unique subscription ID
+        sub_id = make_ref()
+
+        # Monitor subscriber
+        monitor_ref = Process.monitor(pid)
+
+        # Get initial value
+        initial_value = selector.(state.app_state)
+
+        # Send immediately
+        send(pid, {event_name, initial_value})
+
+        # Create subscription
+        subscription = %{
+          id: sub_id,
+          pid: pid,
+          selector: selector,
+          event_name: event_name,
+          last_value: initial_value,
+          monitor_ref: monitor_ref
+        }
+
+        new_state = %{
+          state
+          | _redux_subscriptions: [subscription | state._redux_subscriptions]
+        }
+
+        {:reply, {:ok, sub_id}, new_state}
+      end
+
+      @impl true
+      def handle_call({:unsubscribe, sub_id}, _from, state) do
+        case Enum.find(state._redux_subscriptions, &(&1.id == sub_id)) do
+          nil ->
+            {:reply, :ok, state}
+
+          subscription ->
+            Process.demonitor(subscription.monitor_ref, [:flush])
+            new_subs = Enum.reject(state._redux_subscriptions, &(&1.id == sub_id))
+            {:reply, :ok, %{state | _redux_subscriptions: new_subs}}
+        end
+      end
+
+      # ========================================================================
+      # Reducer/Selector Management
+      # ========================================================================
+
+      @impl true
+      def handle_call({:register_reducer, name, reducer_fn}, _from, state) do
+        new_reducers = Map.put(state._redux_reducers, name, reducer_fn)
+        {:reply, :ok, %{state | _redux_reducers: new_reducers}}
+      end
+
+      @impl true
+      def handle_call({:register_selector, name, selector_fn}, _from, state) do
+        new_selectors = Map.put(state._redux_selectors, name, selector_fn)
+        {:reply, :ok, %{state | _redux_selectors: new_selectors}}
+      end
+
+      @impl true
+      def handle_call({:get_selector, name}, _from, state) do
+        case Map.fetch(state._redux_selectors, name) do
+          {:ok, selector_fn} -> {:reply, {:ok, selector_fn}, state}
+          :error -> {:reply, {:error, {:selector_not_found, name}}, state}
+        end
+      end
+
+      @impl true
+      def handle_call(:get_state, _from, state) do
+        {:reply, {:ok, state.app_state}, state}
+      end
+
+      # ========================================================================
+      # Process Monitoring
+      # ========================================================================
+
+      @impl true
+      def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+        new_subs = Enum.reject(state._redux_subscriptions, &(&1.monitor_ref == ref))
+        {:noreply, %{state | _redux_subscriptions: new_subs}}
+      end
+
+      # ========================================================================
+      # Private Helpers
+      # ========================================================================
+
+      defp dispatch_with_reducers(action, state) do
+        old_app_state = state.app_state
+
+        # Apply all registered reducers
+        new_app_state =
+          Enum.reduce(state._redux_reducers, old_app_state, fn {_name, reducer_fn}, acc_state ->
+            reducer_fn.(action, acc_state)
+          end)
+
+        # Notify subscribers if state changed
+        new_subscriptions =
+          if new_app_state != old_app_state do
+            notify_all_subscriptions(new_app_state, state._redux_subscriptions)
+          else
+            state._redux_subscriptions
+          end
+
+        {new_app_state, new_subscriptions}
+      end
+
+      defp notify_all_subscriptions(new_state, subscriptions) do
+        Enum.map(subscriptions, fn sub ->
+          new_value = sub.selector.(new_state)
+
+          if new_value != sub.last_value do
+            send(sub.pid, {sub.event_name, new_value})
+            %{sub | last_value: new_value}
+          else
+            sub
+          end
+        end)
+      end
+
+      defp add_to_history(action, history, max_size) do
+        entry = %{action: action, timestamp: DateTime.utc_now()}
+        [entry | history] |> Enum.take(max_size)
+      end
+
+      # ========================================================================
+      # Overridable Callbacks
+      # ========================================================================
+
+      defoverridable init: 1,
+                     user_init: 1,
+                     handle_call: 3,
+                     handle_cast: 2,
+                     handle_info: 2
     end
   end
 

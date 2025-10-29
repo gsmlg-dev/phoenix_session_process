@@ -1,5 +1,43 @@
 defmodule Phoenix.SessionProcess.Redux do
   @moduledoc """
+  > #### Deprecation Notice {: .warning}
+  >
+  > **This module is deprecated as of v0.6.0 and will be removed in v1.0.0**
+  >
+  > The Redux functionality has been integrated directly into `Phoenix.SessionProcess`.
+  > You no longer need to manage a separate Redux struct - SessionProcess IS the Redux store.
+  >
+  > **Migration Guide:**
+  >
+  > ```elixir
+  > # OLD (deprecated):
+  > def init(_args) do
+  >   redux = Redux.init_state(%{count: 0}, pubsub: MyApp.PubSub, pubsub_topic: "session:123:redux")
+  >   {:ok, %{redux: redux}}
+  > end
+  >
+  > def handle_call({:dispatch, action}, _from, state) do
+  >   new_redux = Redux.dispatch(state.redux, action, &reducer/2)
+  >   {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
+  > end
+  >
+  > # NEW (recommended):
+  > def user_init(_args) do
+  >   %{count: 0}  # Just return your state
+  > end
+  >
+  > def init(args) do
+  >   # SessionProcess macro handles Redux setup automatically
+  >   super(args)
+  > end
+  >
+  > # Then use the new API:
+  > SessionProcess.dispatch(session_id, action)
+  > SessionProcess.subscribe(session_id, selector)
+  > ```
+  >
+  > See `Phoenix.SessionProcess` for the new API documentation and `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed migration examples.
+
   Redux-style state management for Phoenix Session Process.
 
   This module provides a predictable state container with actions and reducers,
@@ -77,19 +115,29 @@ defmodule Phoenix.SessionProcess.Redux do
   end
   ```
 
-  ## Using Subscriptions
+  ## Using Subscriptions (New Message-Based API)
 
   ```elixir
-  # Subscribe to state changes
-  redux = Redux.subscribe(redux, fn state ->
-    IO.inspect(state, label: "State changed")
-  end)
+  # Subscribe to state changes - receives messages
+  {:ok, sub_id, redux} = Redux.subscribe(
+    redux,
+    fn state -> state.user end,
+    self(),
+    :user_updated
+  )
 
-  # Subscribe with selector (only notifies when user changes)
-  user_selector = fn state -> state.user end
-  redux = Redux.subscribe(redux, user_selector, fn user ->
-    IO.inspect(user, label: "User changed")
-  end)
+  # Immediately receive current value
+  receive do
+    {:user_updated, user} -> IO.puts("Current: \#{inspect(user)}")
+  end
+
+  # Receive updates when user changes
+  receive do
+    {:user_updated, new_user} -> IO.puts("Updated: \#{inspect(new_user)}")
+  end
+
+  # Unsubscribe
+  {:ok, redux} = Redux.unsubscribe(redux, sub_id)
   ```
 
   ## Using Selectors
@@ -185,6 +233,21 @@ defmodule Phoenix.SessionProcess.Redux do
     subscriptions: []
   ]
 
+  # Private helper to log deprecation warnings
+  defp log_deprecation(function_name, migration_message) do
+    require Logger
+
+    Logger.warning("""
+    [Phoenix.SessionProcess.Redux] DEPRECATION WARNING
+    Function: Redux.#{function_name}
+    Status: This module is deprecated as of v0.6.0 and will be removed in v1.0.0
+
+    Migration: #{migration_message}
+
+    See REDUX_TO_SESSIONPROCESS_MIGRATION.md for detailed examples.
+    """)
+  end
+
   @doc """
   Initialize a new Redux state.
 
@@ -209,8 +272,14 @@ defmodule Phoenix.SessionProcess.Redux do
       ...>   pubsub_topic: "session:123:state"
       ...> )
   """
+  @deprecated "Use Phoenix.SessionProcess's built-in Redux functionality via user_init/1 callback instead"
   @spec init_state(state(), keyword()) :: %__MODULE__{}
   def init_state(initial_state, opts \\ []) do
+    log_deprecation(
+      "init_state/2",
+      "Define user_init/1 callback in your SessionProcess module that returns initial state directly"
+    )
+
     %__MODULE__{
       current_state: initial_state,
       initial_state: initial_state,
@@ -233,8 +302,14 @@ defmodule Phoenix.SessionProcess.Redux do
       iex> Redux.current_state(redux)
       %{count: 1}
   """
+  @deprecated "Use Phoenix.SessionProcess.dispatch(session_id, action) instead"
   @spec dispatch(%__MODULE__{}, action(), reducer()) :: %__MODULE__{}
   def dispatch(redux, action, reducer) when is_function(reducer, 2) do
+    log_deprecation(
+      "dispatch/3",
+      "Use Phoenix.SessionProcess.dispatch(session_id, action) and register reducers via register_reducer/3"
+    )
+
     apply_action(redux, action, reducer)
   end
 
@@ -243,6 +318,7 @@ defmodule Phoenix.SessionProcess.Redux do
 
   Requires the Redux module to implement the reducer/2 callback.
   """
+  @deprecated "Use Phoenix.SessionProcess.dispatch(session_id, action) instead"
   @spec dispatch(%__MODULE__{}, action()) :: %__MODULE__{}
   def dispatch(redux, action) do
     if function_exported?(__MODULE__, :reducer, 2) do
@@ -457,48 +533,180 @@ defmodule Phoenix.SessionProcess.Redux do
   @doc """
   Subscribe to state changes.
 
-  See `Phoenix.SessionProcess.Redux.Subscription` for details.
+  Supports both new message-based API and legacy callback API:
+
+  **New Message-Based API** (recommended):
+  - `subscribe(redux, selector)` - Subscribe with selector, returns `{:ok, sub_id, redux}`
+  - `subscribe(redux, selector, pid, event_name)` - Full control
+
+  **Legacy Callback API** (deprecated):
+  - `subscribe(redux, callback)` - Subscribe with callback function
+  - `subscribe(redux, selector, callback)` - Subscribe with selector and callback
+
+  ## New API Examples
+
+      # Subscribe with selector - returns {:ok, sub_id, redux}
+      {:ok, sub_id, redux} = Redux.subscribe(redux, fn state -> state.user end)
+
+      # Immediately receives current user
+      receive do
+        {:state_updated, user} -> IO.puts("Current: \#{inspect(user)}")
+      end
+
+      # With custom event name
+      {:ok, sub_id, redux} = Redux.subscribe(
+        redux,
+        fn state -> state.count end,
+        self(),
+        :count_changed
+      )
+
+  ## Legacy API Examples
+
+      # Old callback style (still works)
+      redux = Redux.subscribe(redux, fn state ->
+        IO.inspect(state, label: "State")
+      end)
+
+      # With selector
+      redux = Redux.subscribe(redux, fn s -> s.user end, fn user ->
+        IO.puts("User: \#{inspect(user)}")
+      end)
+
+  """
+  @deprecated "Use Phoenix.SessionProcess.subscribe(session_id, selector, event_name, pid) instead"
+  @spec subscribe(%__MODULE__{}, function()) :: %__MODULE__{}
+  def subscribe(redux, callback) when is_function(callback, 1) do
+    log_deprecation(
+      "subscribe/2",
+      "Use Phoenix.SessionProcess.subscribe(session_id, selector, event_name) for message-based subscriptions"
+    )
+
+    alias Phoenix.SessionProcess.Redux.Subscription
+
+    # Legacy API: subscribe(redux, callback) - assumes callback, not selector
+    # This maintains backward compatibility where subscribe/2 returns redux
+    {redux, _sub_id} = Subscription.subscribe_to_struct(redux, nil, callback)
+    redux
+  end
+
+  @spec subscribe(%__MODULE__{}, function(), pid() | function()) ::
+          {:ok, reference(), %__MODULE__{}} | %__MODULE__{}
+  def subscribe(redux, selector, pid_or_callback) do
+    alias Phoenix.SessionProcess.Redux.Subscription
+
+    cond do
+      # Legacy API: subscribe(redux, selector, callback)
+      is_function(pid_or_callback, 1) ->
+        {redux, _sub_id} = Subscription.subscribe_to_struct(redux, selector, pid_or_callback)
+        redux
+
+      # New API: subscribe(redux, selector, pid)
+      is_pid(pid_or_callback) ->
+        Subscription.subscribe(redux, selector, pid_or_callback, :state_updated)
+
+      true ->
+        raise ArgumentError,
+              "Third argument must be either a callback function or a PID"
+    end
+  end
+
+  @spec subscribe(%__MODULE__{}, function(), pid(), atom()) ::
+          {:ok, reference(), %__MODULE__{}}
+  def subscribe(redux, selector, pid, event_name)
+      when is_function(selector) and is_pid(pid) and is_atom(event_name) do
+    alias Phoenix.SessionProcess.Redux.Subscription
+    Subscription.subscribe(redux, selector, pid, event_name)
+  end
+
+  @doc """
+  Subscribe to state changes with callback (legacy API).
+
+  **DEPRECATED**: Use `subscribe/4` instead for message-based notifications.
 
   ## Examples
 
       # Subscribe to all changes
-      redux = Redux.subscribe(redux, fn state ->
+      redux = Redux.subscribe_callback(redux, fn state ->
         IO.inspect(state, label: "State changed")
       end)
 
       # Subscribe with selector
-      redux = Redux.subscribe(redux, fn state -> state.user end, fn user ->
+      redux = Redux.subscribe_callback(redux, fn state -> state.user end, fn user ->
         IO.inspect(user, label: "User changed")
       end)
 
   """
-  @spec subscribe(%__MODULE__{}, function()) :: %__MODULE__{}
-  def subscribe(redux, callback) when is_function(callback, 1) do
+  @spec subscribe_callback(%__MODULE__{}, function()) :: %__MODULE__{}
+  def subscribe_callback(redux, callback) when is_function(callback, 1) do
     alias Phoenix.SessionProcess.Redux.Subscription
     {redux, _sub_id} = Subscription.subscribe_to_struct(redux, nil, callback)
     redux
   end
 
-  @spec subscribe(%__MODULE__{}, function() | map(), function()) :: %__MODULE__{}
-  def subscribe(redux, selector, callback) when is_function(callback, 1) do
+  @spec subscribe_callback(%__MODULE__{}, function() | map(), function()) :: %__MODULE__{}
+  def subscribe_callback(redux, selector, callback) when is_function(callback, 1) do
     alias Phoenix.SessionProcess.Redux.Subscription
     {redux, _sub_id} = Subscription.subscribe_to_struct(redux, selector, callback)
     redux
   end
 
   @doc """
-  Unsubscribe from state changes.
+  Unsubscribe from state changes by subscription ID.
+
+  Returns updated Redux struct for backward compatibility.
 
   ## Examples
 
-      {redux, sub_id} = Redux.Subscription.subscribe_to_struct(redux, nil, callback)
+      {:ok, sub_id, redux} = Redux.subscribe(redux, selector)
+      redux = Redux.unsubscribe(redux, sub_id)
+
+      # Or with legacy subscribe API
+      {redux, sub_id} = Subscription.subscribe_to_struct(redux, nil, callback)
       redux = Redux.unsubscribe(redux, sub_id)
 
   """
   @spec unsubscribe(%__MODULE__{}, reference()) :: %__MODULE__{}
   def unsubscribe(redux, subscription_id) do
     alias Phoenix.SessionProcess.Redux.Subscription
-    Subscription.unsubscribe_from_struct(redux, subscription_id)
+    {:ok, updated_redux} = Subscription.unsubscribe(redux, subscription_id)
+    updated_redux
+  end
+
+  @doc """
+  Unsubscribe all subscriptions for a given PID.
+
+  Returns updated Redux struct.
+
+  ## Examples
+
+      redux = Redux.unsubscribe_all(redux, self())
+
+  """
+  @spec unsubscribe_all(%__MODULE__{}, pid()) :: %__MODULE__{}
+  def unsubscribe_all(redux, pid) do
+    alias Phoenix.SessionProcess.Redux.Subscription
+    {:ok, updated_redux} = Subscription.unsubscribe_all(redux, pid)
+    updated_redux
+  end
+
+  @doc """
+  Remove subscriptions for a dead process by monitor reference.
+
+  This should be called from handle_info when receiving :DOWN messages.
+
+  ## Examples
+
+      def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+        redux = Redux.remove_subscription_by_monitor(state.redux, ref)
+        {:noreply, %{state | redux: redux}}
+      end
+
+  """
+  @spec remove_subscription_by_monitor(%__MODULE__{}, reference()) :: %__MODULE__{}
+  def remove_subscription_by_monitor(redux, monitor_ref) do
+    alias Phoenix.SessionProcess.Redux.Subscription
+    Subscription.remove_by_monitor(redux, monitor_ref)
   end
 
   @doc """

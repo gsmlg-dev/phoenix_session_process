@@ -1,182 +1,16 @@
-# Redux Migration Guide for Phoenix Session Process
+# Migration Guide: v0.5.x → v0.6.0
 
-This guide helps you migrate from traditional state management to Redux-style state management with actions and reducers.
+Quick guide to migrating from old Redux API to the new Redux Store API.
 
-> **Note**: Phoenix.SessionProcess offers three state management approaches. See the [State Management Options](README.md#state-management-options) section in the README for a complete comparison and to choose the right approach for your needs.
+## What Changed?
 
-## Overview
-
-The Redux-style state management provides:
-- **Predictable state updates** through actions and reducers
-- **Time-travel debugging** with action history
-- **Middleware support** for logging, validation, and side effects
-- **State persistence** and replay capabilities
-- **Better debugging** with action logging
-
-## When to Use Redux
-
-Consider migrating to Redux when you need:
-
-1. **Complex State Logic** - Multiple related state changes that need to be coordinated
-2. **Debugging Support** - Need to trace state changes and replay actions
-3. **Team Collaboration** - Multiple developers working on the same session logic
-4. **State Persistence** - Need to serialize and restore state (e.g., session recovery)
-5. **Audit Trail** - Requirement to track all state changes for compliance
-
-For simpler use cases, consider using the [Agent-Based State](README.md#2-agent-based-state-simple-and-fast) approach instead.
+**v0.6.0 makes SessionProcess itself a Redux store**. No more managing separate Redux structs!
 
 ## Quick Migration Steps
 
-### 1. Add Redux Module
+### Step 1: Update Session Process
 
-Add the Redux module to your session process:
-
-```elixir
-defmodule MyApp.SessionProcess do
-  use Phoenix.SessionProcess, :process
-  alias Phoenix.SessionProcess.Redux
-
-  # ... rest of your module
-end
-```
-
-### 2. Implement Reducer Function
-
-Define your reducer function that handles actions:
-
-```elixir
-defmodule MyApp.SessionProcess do
-  # ... previous code ...
-  
-  @impl true
-  def reducer(state, action) do
-    case action do
-      {:set_user, user} ->
-        %{state | user: user}
-      
-      {:update_preferences, prefs} ->
-        %{state | preferences: Map.merge(state.preferences, prefs)}
-      
-      {:add_to_cart, item} ->
-        %{state | cart: [item | state.cart]}
-      
-      :clear_cart ->
-        %{state | cart: []}
-      
-      :reset ->
-        %{user: nil, preferences: %{}, cart: []}
-      
-      _ ->
-        state
-    end
-  end
-end
-```
-
-### 3. Update Initialization
-
-Update your `init/1` function to use Redux state:
-
-```elixir
-@impl true
-def init(_init_arg) do
-  initial_state = %{
-    user: nil,
-    preferences: %{},
-    cart: []
-  }
-  
-  {:ok, %{redux: Redux.init_state(initial_state)}}
-end
-```
-
-### 4. Update Message Handlers
-
-Replace direct state manipulation with Redux dispatch:
-
-**Before:**
-```elixir
-def handle_call(:get_user, _from, state) do
-  {:reply, state.user, state}
-end
-
-def handle_cast({:set_user, user}, state) do
-  {:noreply, %{state | user: user}}
-end
-```
-
-**After:**
-```elixir
-def handle_call({:dispatch, :get_user}, _from, state) do
-  current_user = Redux.current_state(state.redux).user
-  {:reply, current_user, state}
-end
-
-def handle_cast({:dispatch, {:set_user, user}}, state) do
-  new_redux = Redux.dispatch(state.redux, {:set_user, user})
-  {:noreply, %{state | redux: new_redux}}
-end
-```
-
-## Migration Patterns
-
-### Pattern 1: Direct Replacement
-
-Replace all state manipulation with Redux actions:
-
-```elixir
-defmodule MyApp.ShoppingCartProcess do
-  use Phoenix.SessionProcess, :process
-  alias Phoenix.SessionProcess.Redux
-
-  @impl true
-  def init(_args) do
-    {:ok, %{redux: Redux.init_state(%{items: [], total: 0})}}
-  end
-
-  @impl true
-  def reducer(state, action) do
-    case action do
-      {:add_item, item} ->
-        items = [item | state.items]
-        total = Enum.reduce(items, 0, fn i, acc -> acc + i.price end)
-        %{state | items: items, total: total}
-      
-      {:remove_item, item_id} ->
-        items = Enum.reject(state.items, & &1.id == item_id)
-        total = Enum.reduce(items, 0, fn i, acc -> acc + i.price end)
-        %{state | items: items, total: total}
-      
-      :clear_cart ->
-        %{items: [], total: 0}
-      
-      _ ->
-        state
-    end
-  end
-
-  # API functions
-  def add_item(session_id, item) do
-    Phoenix.SessionProcess.cast(session_id, {:dispatch, {:add_item, item}})
-  end
-
-  def remove_item(session_id, item_id) do
-    Phoenix.SessionProcess.cast(session_id, {:dispatch, {:remove_item, item_id}})
-  end
-
-  def get_cart(session_id) do
-    case Phoenix.SessionProcess.call(session_id, {:dispatch, :get_cart}) do
-      {:ok, state} -> {:ok, state}
-      error -> error
-    end
-  end
-end
-```
-
-### Pattern 2: Middleware Integration
-
-Add logging and validation middleware:
-
+**Before (v0.5.x):**
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
@@ -184,212 +18,230 @@ defmodule MyApp.SessionProcess do
 
   @impl true
   def init(_args) do
-    initial_state = %{user: nil, preferences: %{}, cart: []}
-    
-    redux = Redux.init_state(initial_state)
-    |> Redux.add_middleware(Redux.logger_middleware())
-    |> Redux.add_middleware(Redux.validation_middleware(&valid_action?/1))
-    
+    redux = Redux.init_state(
+      %{count: 0, user: nil},
+      pubsub: MyApp.PubSub,
+      pubsub_topic: "session:#{get_session_id()}:redux"
+    )
     {:ok, %{redux: redux}}
   end
 
-  defp valid_action?({:set_user, user}) when is_map(user), do: true
-  defp valid_action?({:add_to_cart, item}) when is_map(item), do: true
-  defp valid_action?(:clear_cart), do: true
-  defp valid_action?(_), do: false
+  @impl true
+  def handle_cast(:increment, state) do
+    new_redux = Redux.dispatch(state.redux, :increment, &reducer/2)
+    {:noreply, %{state | redux: new_redux}}
+  end
 
-  # ... rest of implementation
+  @impl true
+  def handle_call(:get_redux_state, _from, state) do
+    {:reply, {:ok, state.redux}, state}
+  end
+
+  defp reducer(state, :increment), do: %{state | count: state.count + 1}
 end
 ```
 
-### Pattern 3: Time-Travel Debugging
-
-Use action history for debugging:
-
+**After (v0.6.0):**
 ```elixir
-defmodule MyApp.DebugSessionProcess do
+defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
-  alias Phoenix.SessionProcess.Redux
 
-  @impl true
-  def init(_args) do
-    {:ok, %{redux: Redux.init_state(%{count: 0}, max_history_size: 50)}}
+  # Just return initial state!
+  def user_init(_args) do
+    %{count: 0, user: nil}
   end
+end
 
-  @impl true
-  def reducer(state, action) do
-    case action do
-      {:increment, value} -> %{state | count: state.count + value}
-      {:decrement, value} -> %{state | count: state.count - value}
-      :reset -> %{count: 0}
-      _ -> state
+# Register reducer elsewhere (controller or LiveView):
+reducer = fn state, action ->
+  case action do
+    :increment -> %{state | count: state.count + 1}
+    _ -> state
+  end
+end
+
+Phoenix.SessionProcess.register_reducer(session_id, :counter, reducer)
+
+# Dispatch actions:
+{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, :increment)
+```
+
+### Step 2: Update LiveView
+
+**Before (v0.5.x):**
+```elixir
+defmodule MyAppWeb.DashboardLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess.LiveView, as: SessionLV
+
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
+      {:ok, socket, state} ->
+        {:ok, assign(socket, state: state)}
     end
   end
 
-  # Debug functions
-  def get_history(session_id) do
-    case Phoenix.SessionProcess.call(session_id, {:dispatch, :get_history}) do
-      {:ok, redux} -> {:ok, Redux.history(redux)}
-      error -> error
+  def handle_info({:redux_state_change, %{state: new_state}}, socket) do
+    {:noreply, assign(socket, state: new_state)}
+  end
+
+  def handle_event("increment", _params, socket) do
+    SessionLV.dispatch_async(socket.assigns.session_id, :increment)
+    {:noreply, socket}
+  end
+
+  def terminate(_reason, socket) do
+    SessionLV.unmount_session(socket)
+    :ok
+  end
+end
+```
+
+**After (v0.6.0):**
+```elixir
+defmodule MyAppWeb.DashboardLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess.LiveView, as: SessionLV
+
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    case SessionLV.mount_store(socket, session_id) do
+      {:ok, socket, state} ->
+        {:ok, assign(socket, state: state, session_id: session_id)}
     end
   end
 
-  def time_travel(session_id, steps_back) do
-    case Phoenix.SessionProcess.call(session_id, {:dispatch, {:time_travel, steps_back}}) do
-      {:ok, redux} -> {:ok, Redux.current_state(redux)}
-      error -> error
-    end
+  def handle_info({:state_changed, new_state}, socket) do
+    {:noreply, assign(socket, state: new_state)}
+  end
+
+  def handle_event("increment", _params, socket) do
+    SessionLV.dispatch_store(socket.assigns.session_id, :increment, async: true)
+    {:noreply, socket}
+  end
+
+  def terminate(_reason, socket) do
+    # Optional - cleanup is automatic!
+    SessionLV.unmount_store(socket)
+    :ok
   end
 end
 ```
 
-## Testing Migration
+## API Changes Summary
 
-### Test Helpers
+| Old API | New API |
+|---------|---------|
+| `Redux.init_state(state, opts)` | `def user_init(_), do: state` |
+| `Redux.dispatch(redux, action, reducer)` | `SessionProcess.dispatch(session_id, action)` |
+| `Redux.subscribe(redux, selector, callback)` | `SessionProcess.subscribe(session_id, selector, event, pid)` |
+| `Redux.get_state(redux)` | `SessionProcess.get_state(session_id)` |
+| `SessionLV.mount_session(socket, id, pubsub)` | `SessionLV.mount_store(socket, id)` |
+| `SessionLV.unmount_session(socket)` | `SessionLV.unmount_store(socket)` |
+| `SessionLV.dispatch_async(id, msg)` | `SessionLV.dispatch_store(id, action, async: true)` |
+| `{:redux_state_change, %{state: s}}` | `{:state_changed, s}` |
 
-Create test helpers to verify migration:
+## Key Benefits
+
+- **70% less boilerplate** - No Redux struct to manage
+- **Simpler code** - Direct SessionProcess integration
+- **Better performance** - Selector-based updates
+- **Automatic cleanup** - Process monitoring handles subscriptions
+- **No PubSub config** - Direct subscriptions to SessionProcess
+
+## Deprecation Warnings
+
+Old code still works but will show deprecation warnings:
+
+```
+[warning] [Phoenix.SessionProcess.Redux] DEPRECATION WARNING
+Function: Redux.init_state/2
+Status: This module is deprecated as of v0.6.0 and will be removed in v1.0.0
+
+Migration: Define user_init/1 callback in your SessionProcess module
+
+See REDUX_TO_SESSIONPROCESS_MIGRATION.md for detailed examples.
+```
+
+## Migration Timeline
+
+- **v0.6.0**: Old API deprecated, new API available
+- **v0.7.x-v0.9.x**: Both APIs supported (grace period)
+- **v1.0.0**: Old API removed
+
+## Need Help?
+
+- **Detailed guide**: See `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+- **Examples**: See `examples/liveview_redux_store_example.ex`
+- **Phase summaries**: See `PHASE_1_IMPLEMENTATION_SUMMARY.md`, `PHASE_2_DEPRECATION_SUMMARY.md`, `PHASE_3_LIVEVIEW_SUMMARY.md`
+
+## Selector-Based Subscriptions (NEW!)
+
+One of the most powerful new features:
 
 ```elixir
-defmodule MyApp.SessionTestHelpers do
-  def assert_state_consistency(old_module, new_module, initial_state, actions) do
-    # Test old approach
-    old_result = simulate_old_state(old_module, initial_state, actions)
-    
-    # Test new approach
-    new_result = simulate_new_state(new_module, initial_state, actions)
-    
-    assert old_result == new_result
-  end
+# Subscribe only to user changes (efficient!)
+{:ok, sub_id} = Phoenix.SessionProcess.subscribe(
+  session_id,
+  fn state -> state.user end,  # Selector function
+  :user_changed,               # Event name
+  self()                       # Subscriber PID
+)
 
-  defp simulate_old_state(module, initial_state, actions) do
-    state = initial_state
-    Enum.reduce(actions, state, fn action, acc ->
-      case action do
-        {:set_user, user} -> %{acc | user: user}
-        {:add_to_cart, item} -> %{acc | cart: [item | acc.cart]}
-        _ -> acc
-      end
-    end)
-  end
-
-  defp simulate_new_state(module, initial_state, actions) do
-    redux = Redux.init_state(initial_state)
-    final_redux = Enum.reduce(actions, redux, fn action, acc ->
-      Redux.dispatch(acc, action, &module.reducer/2)
-    end)
-    Redux.current_state(final_redux)
-  end
+# Only receive messages when user actually changes
+def handle_info({:user_changed, user}, socket) do
+  {:noreply, assign(socket, user: user)}
 end
 ```
 
-### Migration Tests
+This prevents unnecessary updates and improves performance.
 
+## Common Migration Issues
+
+### Issue 1: "undefined function user_init/1"
+
+**Problem**: Forgot to add `user_init/1` callback.
+
+**Solution**: Add the callback to your session process:
 ```elixir
-defmodule MyApp.SessionMigrationTest do
-  use ExUnit.Case
-  alias MyApp.{OldSessionProcess, NewSessionProcess}
-
-  test "state consistency after migration" do
-    initial_state = %{user: nil, cart: []}
-    actions = [
-      {:set_user, %{id: 1, name: "Alice"}},
-      {:add_to_cart, %{id: 1, name: "Widget", price: 10}},
-      {:add_to_cart, %{id: 2, name: "Gadget", price: 20}}
-    ]
-
-    MyApp.SessionTestHelpers.assert_state_consistency(
-      OldSessionProcess,
-      NewSessionProcess,
-      initial_state,
-      actions
-    )
-  end
+def user_init(_args) do
+  %{your: "initial", state: "here"}
 end
 ```
 
-## Action Patterns
+### Issue 2: "No reducer registered"
 
-### Common Action Types
+**Problem**: Dispatching actions without registered reducer.
 
+**Solution**: Register reducer before dispatching:
 ```elixir
-# User actions
-{:user_login, user}
-{:user_logout}
-{:user_update, changes}
-
-# Data actions
-{:data_set, key, value}
-{:data_delete, key}
-{:data_merge, map}
-
-# Collection actions
-{:collection_add, collection_name, item}
-{:collection_remove, collection_name, item_id}
-{:collection_update, collection_name, item_id, changes}
-
-# Session actions
-{:session_start, session_data}
-{:session_end}
-{:session_timeout}
-
-# UI actions
-{:ui_update, page, changes}
-{:ui_error, error_message}
-{:ui_loading, boolean}
+Phoenix.SessionProcess.register_reducer(session_id, :main, fn state, action ->
+  # your reducer logic
+end)
 ```
 
-### Action Creators
+### Issue 3: "Pattern match failed" in handle_info
 
-Create helper functions for action creation:
+**Problem**: Still using old message format `{:redux_state_change, %{state: s}}`.
 
+**Solution**: Update to new format `{:state_changed, s}`:
 ```elixir
-defmodule MyApp.SessionActions do
-  def set_user(user), do: {:set_user, user}
-  def add_to_cart(item), do: {:add_to_cart, item}
-  def remove_from_cart(item_id), do: {:remove_from_cart, item_id}
-  def update_preferences(prefs), do: {:update_preferences, prefs}
-  def clear_cart, do: :clear_cart
-end
+# Old:
+def handle_info({:redux_state_change, %{state: new_state}}, socket)
+
+# New:
+def handle_info({:state_changed, new_state}, socket)
 ```
 
-## Performance Considerations
+## Still Using Old API?
 
-### Memory Usage
-- Redux state includes action history
-- Default history size: 100 actions
-- Can be configured: `Redux.init_state(state, max_history_size: 50)`
+That's fine! The old API will continue to work through v0.9.x. You have time to migrate.
 
-### Serialization
-- State should be serializable for persistence
-- Avoid storing complex objects in state
-- Use simple data structures (maps, lists, primitives)
+When you're ready:
+1. Update one session process at a time
+2. Update its corresponding LiveView
+3. Test thoroughly
+4. Repeat for other processes
 
-## Migration Checklist
+## Questions?
 
-- [ ] Add `use Phoenix.SessionProcess.Redux` to session processes
-- [ ] Implement `reducer/2` function
-- [ ] Update `init/1` to use Redux state structure
-- [ ] Update message handlers to use Redux dispatch
-- [ ] Add migration tests for state consistency
-- [ ] Update documentation and team guidelines
-- [ ] Monitor memory usage with action history
-- [ ] Consider middleware for logging/validation
-- [ ] Plan gradual rollout strategy
-- [ ] Prepare rollback plan
-
-## Support
-
-For migration support:
-1. Check the `Phoenix.SessionProcess.MigrationExamples` module for detailed examples
-2. Run existing tests to ensure compatibility
-3. Use the test helpers provided in this guide
-4. Monitor telemetry events during migration
-5. Start with non-critical sessions first
-
-## Backward Compatibility
-
-The Redux module is designed to be backward compatible:
-- Existing session processes continue to work unchanged
-- New features are opt-in via `use Phoenix.SessionProcess.Redux`
-- Migration can be done gradually
-- No breaking changes to existing APIs
+Open an issue at: https://github.com/gsmlg-dev/phoenix_session_process/issues

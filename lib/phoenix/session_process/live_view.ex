@@ -1,19 +1,48 @@
 defmodule Phoenix.SessionProcess.LiveView do
   @moduledoc """
-  LiveView integration helpers for Redux-based session processes.
+  LiveView integration helpers for Redux Store-based session processes.
 
-  Provides PubSub-based state synchronization between Redux session processes
-  and LiveViews using the Redux dispatch mechanism.
+  Provides two integration patterns:
 
-  ## Why Redux?
+  ## New Redux Store API (v0.6.0+) - Recommended
 
-  The Redux-based approach enforces a single, predictable way to update state:
+  The new API uses SessionProcess's built-in Redux Store for simpler integration:
 
-  - **Single Source of Truth**: All state updates go through Redux.dispatch
-  - **Automatic Notifications**: Redux handles subscriptions and PubSub broadcasts
-  - **Predictable Updates**: Actions and reducers provide clear state transitions
-  - **Distributed**: Works across nodes via Phoenix.PubSub
-  - **No Manual Broadcasting**: State changes are automatically broadcast
+  - **SessionProcess IS the Redux Store**: No separate Redux struct
+  - **Built-in Subscriptions**: Subscribe directly to SessionProcess
+  - **Selector-Based Updates**: Only receive notifications when selected state changes
+  - **Automatic Cleanup**: Process monitoring handles subscription cleanup
+  - **Less Boilerplate**: 70% less code
+
+  Example:
+  ```elixir
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    # Subscribe with selector
+    {:ok, _sub_id} = Phoenix.SessionProcess.subscribe(
+      session_id,
+      fn state -> state.user end,
+      :user_changed,
+      self()
+    )
+
+    {:ok, state} = Phoenix.SessionProcess.get_state(session_id)
+    {:ok, assign(socket, state: state, session_id: session_id)}
+  end
+
+  def handle_info({:user_changed, user}, socket) do
+    {:noreply, assign(socket, user: user)}
+  end
+  ```
+
+  ## Legacy Redux API (Deprecated)
+
+  The old PubSub-based approach with Redux structs still works but is deprecated:
+
+  - **Manual Redux Struct Management**: Requires managing Redux state in process
+  - **PubSub Broadcasting**: Automatic but couples implementation to PubSub
+  - **More Boilerplate**: Nested Redux structs and state extraction
+
+  See module documentation below for migration examples.
 
   ## Basic Usage
 
@@ -101,8 +130,176 @@ defmodule Phoenix.SessionProcess.LiveView do
 
   alias Phoenix.SessionProcess
 
+  # ============================================================================
+  # New Redux Store API (v0.6.0+)
+  # ============================================================================
+
+  @doc """
+  Mount a LiveView with the new Redux Store API.
+
+  Subscribes to state changes using SessionProcess's built-in subscription system.
+  This is the recommended approach for new code.
+
+  ## Parameters
+  - `socket` - The LiveView socket
+  - `session_id` - The session ID to connect to
+  - `selector` - Optional selector function (default: identity function)
+  - `event_name` - Optional event name for notifications (default: :state_changed)
+
+  ## Returns
+  - `{:ok, socket, state}` - Successfully mounted with initial state
+  - `{:error, reason}` - Failed to mount
+
+  ## Examples
+
+      # Subscribe to full state
+      def mount(_params, %{"session_id" => session_id}, socket) do
+        case SessionLV.mount_store(socket, session_id) do
+          {:ok, socket, state} ->
+            {:ok, assign(socket, state: state, session_id: session_id)}
+
+          {:error, _reason} ->
+            {:ok, redirect(socket, to: "/login")}
+        end
+      end
+
+      # Subscribe to specific state slice with selector
+      def mount(_params, %{"session_id" => session_id}, socket) do
+        user_selector = fn state -> state.user end
+
+        case SessionLV.mount_store(socket, session_id, user_selector, :user_changed) do
+          {:ok, socket, user} ->
+            {:ok, assign(socket, user: user, session_id: session_id)}
+
+          {:error, _reason} ->
+            {:ok, redirect(socket, to: "/login")}
+        end
+      end
+
+  Then handle updates:
+
+      def handle_info({:state_changed, state}, socket) do
+        {:noreply, assign(socket, state: state)}
+      end
+
+      def handle_info({:user_changed, user}, socket) do
+        {:noreply, assign(socket, user: user)}
+      end
+
+  """
+  @spec mount_store(term(), String.t(), function(), atom()) ::
+          {:ok, term(), any()} | {:error, term()}
+  def mount_store(socket, session_id, selector \\ &Function.identity/1, event_name \\ :state_changed) do
+    # Subscribe using SessionProcess's built-in subscription
+    case SessionProcess.subscribe(session_id, selector, event_name, self()) do
+      {:ok, sub_id} ->
+        # Get initial state
+        case SessionProcess.get_state(session_id, selector) do
+          {:ok, initial_value} ->
+            # Store subscription info in socket for cleanup
+            socket = assign_store_info(socket, session_id, sub_id)
+            {:ok, socket, initial_value}
+
+          error ->
+            # Clean up subscription on error
+            SessionProcess.unsubscribe(session_id, sub_id)
+            error
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Unmount a LiveView from Redux Store subscriptions.
+
+  Automatically cleans up subscriptions created with `mount_store/4`.
+  Note: Subscriptions are also automatically cleaned up via process monitoring,
+  so calling this is optional but recommended for explicit cleanup.
+
+  ## Parameters
+  - `socket` - The LiveView socket
+
+  ## Returns
+  - `:ok` - Always returns :ok
+
+  ## Examples
+
+      def terminate(_reason, socket) do
+        SessionLV.unmount_store(socket)
+        :ok
+      end
+  """
+  @spec unmount_store(term()) :: :ok
+  def unmount_store(socket) do
+    with session_id when not is_nil(session_id) <- socket.assigns[:__store_session_id__],
+         sub_id when not is_nil(sub_id) <- socket.assigns[:__store_sub_id__] do
+      SessionProcess.unsubscribe(session_id, sub_id)
+    end
+
+    :ok
+  end
+
+  @doc """
+  Dispatch an action to the Redux Store.
+
+  Uses the new SessionProcess.dispatch API for state updates.
+
+  ## Parameters
+  - `session_id` - The session ID
+  - `action` - The action to dispatch
+  - `opts` - Options (default: [])
+    - `:async` - Whether to dispatch asynchronously (default: false)
+
+  ## Returns
+  - `{:ok, new_state}` - Synchronous dispatch returns new state
+  - `:ok` - Asynchronous dispatch returns :ok
+  - `{:error, reason}` - Dispatch failed
+
+  ## Examples
+
+      # Synchronous dispatch (waits for state update)
+      def handle_event("increment", _params, socket) do
+        {:ok, new_state} = SessionLV.dispatch_store(
+          socket.assigns.session_id,
+          :increment
+        )
+        {:noreply, assign(socket, state: new_state)}
+      end
+
+      # Asynchronous dispatch (fire and forget)
+      def handle_event("log_activity", _params, socket) do
+        :ok = SessionLV.dispatch_store(
+          socket.assigns.session_id,
+          :log_activity,
+          async: true
+        )
+        {:noreply, socket}
+      end
+  """
+  @spec dispatch_store(String.t(), term(), keyword()) :: {:ok, map()} | :ok | {:error, term()}
+  def dispatch_store(session_id, action, opts \\ []) do
+    SessionProcess.dispatch(session_id, action, opts)
+  end
+
+  # Private helper to assign store subscription info to socket
+  defp assign_store_info(socket, session_id, sub_id) do
+    socket
+    |> assign_value(:__store_session_id__, session_id)
+    |> assign_value(:__store_sub_id__, sub_id)
+  end
+
+  # ============================================================================
+  # Legacy Redux API (Deprecated)
+  # ============================================================================
+
   @doc """
   Mount a LiveView to a Redux-based session process.
+
+  > #### Deprecation Notice {: .warning}
+  > This function uses the old Redux struct API and is deprecated as of v0.6.0.
+  > Please use `mount_store/4` instead for the new Redux Store API.
 
   Gets the current Redux state from the session and subscribes to Redux state
   changes via PubSub. This should be called during LiveView mount.
@@ -137,6 +334,7 @@ defmodule Phoenix.SessionProcess.LiveView do
         :get_current_redux_state
       )
   """
+  @deprecated "Use mount_store/4 instead for the new Redux Store API"
   @spec mount_session(term(), String.t(), module(), atom()) ::
           {:ok, term(), any()} | {:error, term()}
   def mount_session(socket, session_id, pubsub, state_key \\ :get_redux_state) do
@@ -182,6 +380,10 @@ defmodule Phoenix.SessionProcess.LiveView do
   @doc """
   Unmount a LiveView from its Redux-based session process.
 
+  > #### Deprecation Notice {: .warning}
+  > This function uses the old Redux PubSub API and is deprecated as of v0.6.0.
+  > Please use `unmount_store/1` instead for the new Redux Store API.
+
   Unsubscribes from Redux PubSub topic. This should be called in the LiveView's
   terminate callback.
 
@@ -198,6 +400,7 @@ defmodule Phoenix.SessionProcess.LiveView do
         :ok
       end
   """
+  @deprecated "Use unmount_store/1 instead for the new Redux Store API"
   @spec unmount_session(term()) :: :ok
   def unmount_session(socket) do
     with session_id when not is_nil(session_id) <- socket.assigns[:__session_id__],
@@ -211,6 +414,10 @@ defmodule Phoenix.SessionProcess.LiveView do
 
   @doc """
   Dispatch a message to a session process.
+
+  > #### Deprecation Notice {: .warning}
+  > For Redux Store API, use `dispatch_store/3` instead.
+  > This function is a simple wrapper around SessionProcess.call and remains available.
 
   Convenience function for sending messages from LiveView to the session process.
 
@@ -242,6 +449,10 @@ defmodule Phoenix.SessionProcess.LiveView do
 
   @doc """
   Asynchronously dispatch a message to a session process.
+
+  > #### Deprecation Notice {: .warning}
+  > For Redux Store API, use `dispatch_store/3` with `async: true` instead.
+  > This function is a simple wrapper around SessionProcess.cast and remains available.
 
   Like `dispatch/2` but uses cast instead of call (fire-and-forget).
 

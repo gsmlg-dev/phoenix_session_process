@@ -16,6 +16,220 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     {:ok, redux: redux}
   end
 
+  describe "subscribe/4 (new message-based API)" do
+    test "sends initial value immediately on subscribe", %{redux: redux} do
+      selector = fn state -> state.count end
+
+      {:ok, _sub_id, _redux} = Subscription.subscribe(redux, selector, self(), :count_changed)
+
+      # Should immediately receive current count
+      assert_receive {:count_changed, 0}, 100
+    end
+
+    test "sends updates when selected data changes", %{redux: redux} do
+      selector = fn state -> state.user end
+
+      {:ok, _sub_id, redux} = Subscription.subscribe(redux, selector, self(), :user_changed)
+
+      # Clear initial notification
+      assert_receive {:user_changed, %{id: 1, name: "Alice"}}, 100
+
+      # Update user
+      new_user = %{id: 2, name: "Bob"}
+      redux = %{redux | current_state: %{redux.current_state | user: new_user}}
+      redux = Subscription.notify_all_struct(redux)
+
+      # Should receive notification
+      assert_receive {:user_changed, ^new_user}, 100
+    end
+
+    test "only notifies when selected data changes", %{redux: redux} do
+      selector = fn state -> state.count end
+
+      {:ok, _sub_id, redux} = Subscription.subscribe(redux, selector, self(), :count_changed)
+
+      # Clear initial notification
+      assert_receive {:count_changed, 0}, 100
+
+      # Dispatch action that doesn't change count
+      redux = %{redux | current_state: %{redux.current_state | user: %{id: 99, name: "Test"}}}
+      redux = Subscription.notify_all_struct(redux)
+
+      # Should NOT receive notification (count unchanged)
+      refute_receive {:count_changed, _}, 100
+
+      # Dispatch action that changes count
+      redux = %{redux | current_state: %{redux.current_state | count: 1}}
+      redux = Subscription.notify_all_struct(redux)
+
+      # Should receive notification (count changed)
+      assert_receive {:count_changed, 1}, 100
+    end
+
+    test "supports custom event names", %{redux: redux} do
+      selector = fn state -> state.user.name end
+
+      {:ok, _sub_id, _redux} = Subscription.subscribe(redux, selector, self(), :custom_event)
+
+      # Should receive with custom event name
+      assert_receive {:custom_event, "Alice"}, 100
+    end
+
+    test "monitors subscriber process", %{redux: redux} do
+      selector = fn state -> state.count end
+
+      {:ok, sub_id, redux} = Subscription.subscribe(redux, selector, self(), :test_event)
+
+      # Check subscription has monitor_ref
+      [sub] = Enum.filter(redux.subscriptions, fn s -> s.id == sub_id end)
+      assert is_reference(sub.monitor_ref)
+      assert is_pid(sub.pid)
+      assert sub.event_name == :test_event
+    end
+
+    test "subscribes multiple processes independently", %{redux: redux} do
+      parent = self()
+
+      # Subscribe from parent
+      {:ok, _sub_id, redux} =
+        Subscription.subscribe(redux, fn s -> s.count end, self(), :parent_update)
+
+      assert_receive {:parent_update, 0}, 100
+
+      # Spawn a subscriber process and add to the same redux
+      subscriber =
+        spawn_link(fn ->
+          receive do
+            {:subscribe, redux_state} ->
+              {:ok, _sub_id, updated_redux} =
+                Subscription.subscribe(redux_state, fn s -> s.count end, self(), :count_update)
+
+              assert_receive {:count_update, 0}, 100
+              send(parent, {:updated_redux, updated_redux})
+
+              receive do
+                {:count_update, count} -> send(parent, {:subscriber_got, count})
+              after
+                1000 -> :timeout
+              end
+          end
+        end)
+
+      # Send redux to subscriber
+      send(subscriber, {:subscribe, redux})
+
+      # Get updated redux with both subscriptions
+      redux =
+        receive do
+          {:updated_redux, updated_redux} -> updated_redux
+        after
+          1000 -> redux
+        end
+
+      # Both should have subscriptions
+      assert length(redux.subscriptions) == 2
+    end
+  end
+
+  describe "unsubscribe/2" do
+    test "removes subscription and demonitors", %{redux: redux} do
+      selector = fn state -> state.count end
+
+      {:ok, sub_id, redux} = Subscription.subscribe(redux, selector, self(), :test)
+
+      # Clear initial message
+      assert_receive {:test, 0}, 100
+
+      # Unsubscribe
+      {:ok, redux} = Subscription.unsubscribe(redux, sub_id)
+
+      # Subscription should be removed
+      assert Enum.empty?(redux.subscriptions)
+
+      # Update state - should NOT receive notification
+      redux = %{redux | current_state: %{redux.current_state | count: 1}}
+      _redux = Subscription.notify_all_struct(redux)
+
+      refute_receive {:test, _}, 100
+    end
+
+    test "only removes specified subscription", %{redux: redux} do
+      {:ok, sub1, redux} =
+        Subscription.subscribe(redux, fn s -> s.count end, self(), :sub1)
+
+      {:ok, _sub2, redux} =
+        Subscription.subscribe(redux, fn s -> s.count end, self(), :sub2)
+
+      # Clear initial messages
+      assert_receive {:sub1, 0}, 100
+      assert_receive {:sub2, 0}, 100
+
+      # Unsubscribe only sub1
+      {:ok, redux} = Subscription.unsubscribe(redux, sub1)
+      assert length(redux.subscriptions) == 1
+
+      # Update state
+      redux = %{redux | current_state: %{redux.current_state | count: 5}}
+      _redux = Subscription.notify_all_struct(redux)
+
+      # Only sub2 should be notified
+      refute_receive {:sub1, _}, 100
+      assert_receive {:sub2, 5}, 100
+    end
+  end
+
+  describe "unsubscribe_all/2" do
+    test "removes all subscriptions for a PID", %{redux: redux} do
+      # Add multiple subscriptions for same PID
+      {:ok, _sub1, redux} =
+        Subscription.subscribe(redux, fn s -> s.count end, self(), :sub1)
+
+      {:ok, _sub2, redux} =
+        Subscription.subscribe(redux, fn s -> s.user end, self(), :sub2)
+
+      {:ok, _sub3, redux} =
+        Subscription.subscribe(redux, fn s -> s.items end, self(), :sub3)
+
+      # Clear initial messages
+      assert_receive {:sub1, 0}, 100
+      assert_receive {:sub2, _}, 100
+      assert_receive {:sub3, []}, 100
+
+      assert length(redux.subscriptions) == 3
+
+      # Unsubscribe all for this PID
+      {:ok, redux} = Subscription.unsubscribe_all(redux, self())
+
+      # All subscriptions should be removed
+      assert Enum.empty?(redux.subscriptions)
+
+      # Update state - should NOT receive any notifications
+      redux = %{redux | current_state: %{redux.current_state | count: 1}}
+      _redux = Subscription.notify_all_struct(redux)
+
+      refute_receive {:sub1, _}, 100
+      refute_receive {:sub2, _}, 100
+      refute_receive {:sub3, _}, 100
+    end
+  end
+
+  describe "remove_by_monitor/2" do
+    test "removes subscription by monitor reference", %{redux: redux} do
+      {:ok, _sub_id, redux} =
+        Subscription.subscribe(redux, fn s -> s.count end, self(), :test)
+
+      # Get monitor ref
+      [sub] = redux.subscriptions
+      monitor_ref = sub.monitor_ref
+
+      # Remove by monitor ref
+      redux = Subscription.remove_by_monitor(redux, monitor_ref)
+
+      # Subscription should be removed
+      assert Enum.empty?(redux.subscriptions)
+    end
+  end
+
   describe "subscribe_to_struct/3 without selector" do
     test "creates subscription and calls callback immediately", %{redux: redux} do
       # Use send to track callback
@@ -448,18 +662,16 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     end
   end
 
-  describe "integration with Redux.dispatch" do
+  describe "integration with Redux.dispatch (new API)" do
     test "subscriptions are notified after dispatch", %{redux: redux} do
       test_pid = self()
 
-      # Add subscription
-      redux =
-        Redux.subscribe(redux, fn state ->
-          send(test_pid, {:state_updated, state.count})
-        end)
+      # Add subscription with new API
+      {:ok, _sub_id, redux} =
+        Redux.subscribe(redux, fn state -> state.count end, test_pid, :count_updated)
 
-      # Clear initial callback
-      assert_receive {:state_updated, 0}
+      # Clear initial notification
+      assert_receive {:count_updated, 0}
 
       # Dispatch action
       redux =
@@ -468,7 +680,7 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
         end)
 
       # Should receive notification
-      assert_receive {:state_updated, 1}
+      assert_receive {:count_updated, 1}
 
       # Verify state updated
       assert Redux.get_state(redux).count == 1
@@ -477,20 +689,14 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
     test "multiple subscriptions notified in order", %{redux: redux} do
       test_pid = self()
 
-      redux =
-        Redux.subscribe(redux, fn state ->
-          send(test_pid, {:sub1, state.count})
-        end)
+      {:ok, _sub1, redux} =
+        Redux.subscribe(redux, fn state -> state.count end, test_pid, :sub1)
 
-      redux =
-        Redux.subscribe(redux, fn state ->
-          send(test_pid, {:sub2, state.count})
-        end)
+      {:ok, _sub2, redux} =
+        Redux.subscribe(redux, fn state -> state.count end, test_pid, :sub2)
 
-      redux =
-        Redux.subscribe(redux, fn state ->
-          send(test_pid, {:sub3, state.count})
-        end)
+      {:ok, _sub3, redux} =
+        Redux.subscribe(redux, fn state -> state.count end, test_pid, :sub3)
 
       # Clear initial callbacks
       assert_receive {:sub1, 0}
@@ -516,6 +722,33 @@ defmodule Phoenix.SessionProcess.Redux.SubscriptionTest do
       receive do
         msg3 -> assert msg3 in [{:sub1, 5}, {:sub2, 5}, {:sub3, 5}]
       end
+    end
+  end
+
+  describe "integration with Redux.dispatch (legacy callback API)" do
+    test "callback subscriptions are notified after dispatch", %{redux: redux} do
+      test_pid = self()
+
+      # Add subscription with legacy callback API
+      redux =
+        Redux.subscribe_callback(redux, fn state ->
+          send(test_pid, {:state_updated, state.count})
+        end)
+
+      # Clear initial callback
+      assert_receive {:state_updated, 0}
+
+      # Dispatch action
+      redux =
+        Redux.dispatch(redux, :increment, fn state, :increment ->
+          %{state | count: state.count + 1}
+        end)
+
+      # Should receive notification
+      assert_receive {:state_updated, 1}
+
+      # Verify state updated
+      assert Redux.get_state(redux).count == 1
     end
   end
 

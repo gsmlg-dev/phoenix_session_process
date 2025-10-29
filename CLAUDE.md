@@ -67,15 +67,21 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
 **LiveView Integration**:
-- `Phoenix.SessionProcess.LiveView` - PubSub-based LiveView integration helpers (recommended)
+- `Phoenix.SessionProcess.LiveView` - LiveView integration helpers with Redux Store API (v0.6.0+)
+  - **New API**: `mount_store/4`, `unmount_store/1`, `dispatch_store/3` (recommended)
+  - **Legacy API**: `mount_session/4`, `unmount_session/1` (deprecated, still works)
 
 **State Management Utilities**:
-- `Phoenix.SessionProcess.Redux` - Optional Redux-style state with actions/reducers, subscriptions, and selectors (advanced use cases)
-- `Phoenix.SessionProcess.Redux.Selector` - Memoized selectors for efficient derived state
-- `Phoenix.SessionProcess.Redux.Subscription` - Subscription management for reactive state changes
-- `Phoenix.SessionProcess.Redux.LiveView` - Redux-specific LiveView integration helpers
-- `Phoenix.SessionProcess.MigrationExamples` - Migration examples for Redux
-- `Phoenix.SessionProcess.ReduxExamples` - Comprehensive Redux usage examples
+- **Redux Store API (v0.6.0+)**: Built directly into `Phoenix.SessionProcess` (recommended)
+  - SessionProcess IS the Redux store - no separate struct needed
+  - Functions: `dispatch/3`, `subscribe/4`, `register_reducer/3`, `register_selector/3`, `get_state/2`
+  - 70% less boilerplate than old Redux API
+
+- **Legacy Redux Module** (deprecated as of v0.6.0):
+  - `Phoenix.SessionProcess.Redux` - Separate Redux struct (deprecated, still works)
+  - `Phoenix.SessionProcess.Redux.Selector` - Memoized selectors
+  - `Phoenix.SessionProcess.Redux.Subscription` - Subscription management
+  - Migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
 
 **Configuration & Error Handling**:
 - `Phoenix.SessionProcess.Config` - Configuration management
@@ -91,11 +97,38 @@ The library is organized into several logical groups:
 1. **Phoenix.SessionProcess** (lib/phoenix/session_process.ex:1)
    - Main module providing the public API
    - Delegates to ProcessSupervisor for actual process management
-   - Provides the `:process` macro for basic GenServer functionality
-   - The macro injects: `get_session_id/0` helper function
-   - **State updates ONLY via Redux.dispatch** - no manual broadcast helpers
+   - Provides the `:process` macro with built-in Redux Store infrastructure (v0.6.0+)
+   - The macro injects: `get_session_id/0` helper and Redux infrastructure
    - Note: `:process_link` is deprecated - use `:process` instead
-   - Key functions: `start/1-3`, `call/2-3`, `cast/2`, `terminate/1`, `started?/1`, `list_session/0`
+
+   **Basic Functions**:
+   - `start/1-3` - Start session process
+   - `call/2-3` - Synchronous call to session
+   - `cast/2` - Asynchronous cast to session
+   - `terminate/1` - Stop session
+   - `started?/1` - Check if session exists
+   - `list_session/0` - List all sessions
+
+   **Redux Store API (v0.6.0+)** - SessionProcess IS the Redux store:
+   - `dispatch/3` - Dispatch actions (sync or async)
+   - `subscribe/4` - Subscribe with selector
+   - `unsubscribe/2` - Remove subscription
+   - `register_reducer/3` - Register named reducer
+   - `register_selector/3` - Register named selector
+   - `get_state/2` - Get state (with optional selector)
+   - `select/2` - Apply registered selector
+
+   **Process Macro Usage**:
+   ```elixir
+   defmodule MySessionProcess do
+     use Phoenix.SessionProcess, :process
+
+     # NEW: Define initial state with user_init/1
+     def user_init(_args) do
+       %{count: 0, user: nil}
+     end
+   end
+   ```
 
 2. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
    - Top-level supervisor that manages the Registry, ProcessSupervisor, and Cleanup
@@ -119,23 +152,40 @@ The library is organized into several logical groups:
    - Runs cleanup tasks periodically
 
 6. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
-   - Redux-based LiveView integration for session processes
-   - **Requires Redux** for state management
-   - Key functions: `mount_session/3-4` (default state_key: :get_redux_state), `unmount_session/1`, `dispatch/2`, `subscribe/2`
-   - Subscribes to Redux PubSub topic: `"session:#{session_id}:redux"`
-   - Receives state changes as `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
-   - Works across distributed nodes via Phoenix.PubSub
+   - LiveView integration helpers for Redux Store API
 
-7. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1)
-   - Optional Redux-style state management with actions, reducers, subscriptions, and selectors
-   - Provides time-travel debugging, middleware support, and action history
-   - **Redux.Selector**: Memoized selectors with reselect-style composition for efficient derived state
-   - **Redux.Subscription**: Subscribe to state changes with optional selectors (only notifies when selected values change)
-   - **Redux.LiveView**: Helper module for Redux-specific LiveView integration
-   - **Phoenix.PubSub integration**: Broadcast state changes across nodes for distributed applications
-   - **Comprehensive telemetry**: Monitor Redux operations (dispatch, subscribe, selector cache hits/misses, PubSub broadcasts)
-   - Best for complex applications requiring reactive UIs, predictable state updates, audit trails, or distributed state
-   - Note: Most applications don't need this - standard GenServer state is sufficient
+   **New Redux Store API (v0.6.0+)** - Recommended:
+   - `mount_store/4` - Mount with direct SessionProcess subscriptions
+   - `unmount_store/1` - Unmount (optional, automatic cleanup via monitoring)
+   - `dispatch_store/3` - Dispatch actions (sync/async)
+   - Uses SessionProcess subscriptions (not PubSub)
+   - Selector-based updates for efficiency
+   - Automatic cleanup via process monitoring
+
+   **Legacy Redux API** (deprecated, still works):
+   - `mount_session/3-4` - Mount with PubSub (default state_key: :get_redux_state)
+   - `unmount_session/1` - Unmount from PubSub
+   - `dispatch/2`, `dispatch_async/2` - Generic dispatch helpers
+   - Uses PubSub topic: `"session:#{session_id}:redux"`
+   - Message format: `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
+
+7. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1) - **DEPRECATED as of v0.6.0**
+   - **Use the new Redux Store API instead** (built into SessionProcess)
+   - Old Redux struct-based state management (deprecated, still works)
+   - Requires managing separate Redux struct: `%Redux{current_state: ...}`
+   - Functions marked with `@deprecated` annotations
+   - Runtime deprecation warnings guide migration
+   - Migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+
+   **Legacy features** (all moved to SessionProcess in v0.6.0):
+   - Actions, reducers, subscriptions, selectors
+   - Time-travel debugging, middleware, action history
+   - PubSub integration for distributed state
+
+   **Migration path**:
+   - Old: `Redux.init_state(...)` → New: `def user_init(_), do: %{...}`
+   - Old: `Redux.dispatch(redux, action, reducer)` → New: `SessionProcess.dispatch(session_id, action)`
+   - Old: `Redux.subscribe(redux, selector, callback)` → New: `SessionProcess.subscribe(session_id, selector, event, pid)`
 
 ### Process Management Flow
 
@@ -153,18 +203,27 @@ The library is organized into several logical groups:
 
 - Uses Registry for bidirectional lookups (session_id ↔ pid, pid ↔ module)
 - DynamicSupervisor for on-demand process creation
-- `:process` macro injects GenServer boilerplate
-- **Redux-only state management**:
-  - All state updates go through `Redux.dispatch(redux, action, reducer)`
-  - Redux automatically handles subscriptions and PubSub broadcasts
-  - No manual `broadcast_state_change` or `session_topic` helpers
-  - Single, predictable way to update state
-- **Redux-based LiveView integration** (required for LiveView):
-  - Session processes use Redux with PubSub configuration
-  - LiveViews subscribe using `Phoenix.SessionProcess.LiveView.mount_session/3-4`
-  - Redux PubSub topic: `"session:#{session_id}:redux"`
-  - Message format: `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
-  - Works across distributed nodes
+- `:process` macro injects GenServer boilerplate + Redux Store infrastructure (v0.6.0+)
+
+- **Redux Store API (v0.6.0+)** - SessionProcess IS the Redux store:
+  - All state updates go through `SessionProcess.dispatch(session_id, action)`
+  - Subscriptions use selectors: `SessionProcess.subscribe(session_id, selector, event, pid)`
+  - Automatic subscription cleanup via process monitoring
+  - No separate Redux struct needed - just return state from `user_init/1`
+  - 70% less boilerplate than old Redux API
+
+- **LiveView Integration (v0.6.0+)**:
+  - Use `Phoenix.SessionProcess.LiveView.mount_store/4` for direct subscriptions
+  - No PubSub configuration needed
+  - Selector-based updates for efficiency
+  - Message format: `{event_name, selected_value}`
+  - Automatic cleanup when LiveView terminates
+
+- **Legacy Redux API** (deprecated):
+  - Old struct-based Redux (still works but deprecated)
+  - PubSub-based LiveView integration (still works but deprecated)
+  - Migration guide available
+
 - Telemetry events for all lifecycle operations (start, stop, call, cast, cleanup, errors)
 - Comprehensive error handling with Phoenix.SessionProcess.Error module
 
@@ -196,107 +255,154 @@ Configuration options:
 5. Communicate using call/cast operations
 6. For LiveView integration, use `Phoenix.SessionProcess.LiveView` helpers
 
-### LiveView Integration Example (Redux-Only)
+### LiveView Integration Example (New Redux Store API - v0.6.0+)
 
 **Session Process:**
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
-  alias Phoenix.SessionProcess.Redux
 
-  @impl true
-  def init(_) do
-    redux = Redux.init_state(
-      %{count: 0, user: nil},
-      pubsub: MyApp.PubSub,
-      pubsub_topic: "session:#{get_session_id()}:redux"
-    )
-    {:ok, %{redux: redux}}
-  end
-
-  @impl true
-  def handle_cast({:increment}, state) do
-    # Dispatch action - Redux handles all notifications automatically
-    new_redux = Redux.dispatch(state.redux, {:increment}, &reducer/2)
-    {:noreply, %{state | redux: new_redux}}
-  end
-
-  @impl true
-  def handle_call(:get_redux_state, _from, state) do
-    {:reply, {:ok, state.redux}, state}
-  end
-
-  defp reducer(state, action) do
-    case action do
-      {:increment} -> %{state | count: state.count + 1}
-      _ -> state
-    end
+  # NEW: Just define initial state with user_init/1
+  def user_init(_args) do
+    %{count: 0, user: nil}
   end
 end
 ```
 
-**LiveView:**
+**Register Reducer and Use:**
+```elixir
+# In your controller or LiveView mount:
+session_id = conn.assigns.session_id
+
+# Start session
+Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
+
+# Register reducer
+reducer = fn state, action ->
+  case action do
+    :increment -> %{state | count: state.count + 1}
+    {:set_user, user} -> %{state | user: user}
+    _ -> state
+  end
+end
+
+Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
+
+# Dispatch actions
+{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, :increment)
+```
+
+**LiveView (NEW API):**
 ```elixir
 defmodule MyAppWeb.DashboardLive do
   use Phoenix.LiveView
+  alias Phoenix.SessionProcess
   alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
   def mount(_params, %{"session_id" => session_id}, socket) do
-    # Subscribe and get initial Redux state
-    case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
+    # NEW: mount_store with direct subscription
+    case SessionLV.mount_store(socket, session_id) do
       {:ok, socket, state} ->
-        {:ok, assign(socket, state: state)}
+        {:ok, assign(socket, state: state, session_id: session_id)}
       {:error, _} ->
         {:ok, socket}
     end
   end
 
-  # Receive Redux state updates
-  def handle_info({:redux_state_change, %{state: new_state}}, socket) do
+  # NEW: Receive state updates (simpler message format!)
+  def handle_info({:state_changed, new_state}, socket) do
     {:noreply, assign(socket, state: new_state)}
   end
 
+  # NEW: Dispatch actions directly
+  def handle_event("increment", _params, socket) do
+    :ok = SessionLV.dispatch_store(socket.assigns.session_id, :increment, async: true)
+    {:noreply, socket}
+  end
+
   def terminate(_reason, socket) do
-    SessionLV.unmount_session(socket)
+    # NEW: Cleanup is automatic via process monitoring!
+    # But you can explicitly unmount if desired:
+    SessionLV.unmount_store(socket)
     :ok
   end
 end
 ```
 
-## State Management Architecture
+**Benefits of New API:**
+- 70% less boilerplate
+- No Redux struct management
+- No PubSub configuration
+- Automatic cleanup
+- Simpler message format
+```
 
-Phoenix.SessionProcess enforces Redux-based state management for LiveView integration.
+## State Management Options
 
-### Core Principle
-All state updates go through Redux dispatch actions.
+Phoenix.SessionProcess provides two approaches to state management:
 
-### State Update Flow
-1. Action dispatched: `Redux.dispatch(redux, action, reducer)`
-2. Reducer updates state
-3. Redux notifies subscriptions (automatic)
-4. Redux broadcasts via PubSub (automatic, if configured)
-5. LiveViews receive state updates
+### 1. Redux Store API (v0.6.0+) - Recommended
 
-### No Manual Broadcasting
-The library does NOT provide manual broadcast helpers. All notifications
-happen automatically through Redux dispatch.
+SessionProcess itself is a Redux store with built-in infrastructure:
 
-### When to Use Redux
-- **Required** if using LiveView integration
-- **Optional** for session-only processes without LiveView
+**Core Principle**: SessionProcess IS the Redux store - no separate struct needed.
 
-### State Management Options
+**State Update Flow**:
+1. Action dispatched: `SessionProcess.dispatch(session_id, action)`
+2. Registered reducers transform state
+3. SessionProcess notifies subscriptions (automatic)
+4. Subscribers with matching selectors receive updates
+5. Dead subscriptions cleaned up automatically via process monitoring
 
-1. **Redux-based State** (Required for LiveView) - Predictable state updates with actions/reducers
-   - Use `Redux.dispatch(redux, action, reducer)` to update state
-   - Automatic PubSub broadcasting to LiveViews
-   - Time-travel debugging, middleware, action history available
-   - Use when you need LiveView integration or audit trails
+**Benefits**:
+- 70% less boilerplate
+- No Redux struct management
+- Direct SessionProcess integration
+- Automatic subscription cleanup
+- Selector-based updates for efficiency
 
-2. **Standard GenServer State** (Session-only) - Full control with standard GenServer callbacks
-   - Use `handle_call`, `handle_cast`, and `handle_info` to manage state
-   - Simple, idiomatic Elixir
-   - Use when no LiveView integration is needed
+**Usage**:
+```elixir
+# Define initial state
+def user_init(_), do: %{count: 0}
+
+# Register reducer
+SessionProcess.register_reducer(session_id, :counter, fn state, action ->
+  case action do
+    :increment -> %{state | count: state.count + 1}
+    _ -> state
+  end
+end)
+
+# Dispatch actions
+{:ok, new_state} = SessionProcess.dispatch(session_id, :increment)
+
+# Subscribe with selector
+{:ok, sub_id} = SessionProcess.subscribe(
+  session_id,
+  fn state -> state.count end,
+  :count_changed,
+  self()
+)
+```
+
+### 2. Legacy Redux Module (Deprecated)
+
+Old struct-based Redux (still works but deprecated):
+
+**Core Principle**: Manage separate `%Redux{}` struct in process state.
+
+**Deprecated as of v0.6.0** - use Redux Store API instead.
+
+**Migration Guide**: See `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+
+### 3. Standard GenServer State (Basic)
+
+For simple session-only processes without LiveView:
+
+**Usage**: Standard `handle_call`, `handle_cast`, and `handle_info` callbacks
+
+**When to use**: Simple state management without LiveView integration
 
 ## Telemetry and Error Handling
 

@@ -20,6 +20,8 @@ Traditional session management stores session data in external stores (Redis, da
 ## Features
 
 - **Session Isolation**: Each user session runs in its own GenServer process
+- **Redux Store Integration**: Built-in Redux with actions, reducers, and selectors (NEW in v0.6.0)
+- **Reactive Subscriptions**: Subscribe to state changes with selector-based change detection
 - **Automatic Cleanup**: TTL-based automatic session cleanup and memory management
 - **LiveView Integration**: Built-in support for monitoring LiveView processes
 - **High Performance**: Optimized for 10,000+ concurrent sessions
@@ -141,11 +143,115 @@ defmodule MyApp.SessionProcess do
 end
 ```
 
-### With LiveView Integration (Redux-Based)
+### Redux Store API (NEW in v0.6.0)
+
+Phoenix.SessionProcess now includes built-in Redux functionality - **SessionProcess IS the Redux store**. No need to manage separate Redux structs or manual state updates.
+
+#### Session Process as Redux Store
+
+```elixir
+defmodule MyApp.SessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  # Define your initial state
+  def user_init(_args) do
+    %{user: nil, count: 0, preferences: %{}}
+  end
+end
+
+# In your controller:
+{:ok, _pid} = Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
+
+# Register a reducer
+reducer = fn state, action ->
+  case action do
+    {:set_user, user} -> %{state | user: user}
+    :increment -> %{state | count: state.count + 1}
+    _ -> state
+  end
+end
+
+Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
+
+# Dispatch actions (synchronous)
+{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123, name: "Alice"}})
+
+# Dispatch actions (asynchronous)
+:ok = Phoenix.SessionProcess.dispatch(session_id, :increment, async: true)
+
+# Subscribe to state changes
+Phoenix.SessionProcess.subscribe(
+  session_id,
+  fn state -> state.user end,  # Selector function
+  :user_changed,               # Event name
+  self()                       # Subscriber PID
+)
+
+# Receive notifications when user changes
+receive do
+  {:user_changed, user} -> IO.inspect(user, label: "User updated")
+end
+```
+
+#### LiveView with Redux Store API
+
+```elixir
+defmodule MyAppWeb.DashboardLive do
+  use Phoenix.LiveView
+  alias Phoenix.SessionProcess
+
+  def mount(_params, %{"session_id" => session_id}, socket) do
+    # Subscribe to user state
+    {:ok, _sub_id} = SessionProcess.subscribe(
+      session_id,
+      fn state -> state.user end,
+      :user_changed,
+      self()
+    )
+
+    # Get initial state
+    {:ok, state} = SessionProcess.get_state(session_id)
+
+    {:ok, assign(socket, session_id: session_id, state: state)}
+  end
+
+  # Receive state updates
+  def handle_info({:user_changed, user}, socket) do
+    {:noreply, assign(socket, user: user)}
+  end
+
+  # Dispatch actions
+  def handle_event("increment", _params, socket) do
+    SessionProcess.dispatch(socket.assigns.session_id, :increment, async: true)
+    {:noreply, socket}
+  end
+
+  def terminate(_reason, socket) do
+    # Subscriptions are automatically cleaned up via process monitoring
+    :ok
+  end
+end
+```
+
+**Benefits of the new API:**
+- 70% less boilerplate code
+- No Redux struct to manage
+- Direct SessionProcess integration
+- Automatic subscription cleanup
+- Process-level selectors for efficient updates
+
+---
+
+> **Deprecation Notice**: The following section shows the old Redux API which is deprecated as of v0.6.0.
+> Please migrate to the new Redux Store API shown above.
+
+### With LiveView Integration (Redux-Based) - **DEPRECATED**
 
 Phoenix.SessionProcess provides Redux-based LiveView integration for real-time state synchronization. All state updates go through Redux dispatch actions, which automatically handle PubSub broadcasting.
 
-#### Session Process with Redux
+**This approach is deprecated** - use the Redux Store API (see above) instead.
+
+#### Session Process with Redux - **DEPRECATED**
 
 ```elixir
 defmodule MyApp.SessionProcess do
@@ -293,6 +399,65 @@ defmodule MyApp.SessionProcess do
   end
 end
 ```
+
+### Redux Store API (v0.6.0+)
+
+The built-in Redux Store API provides state management with actions, reducers, and subscriptions:
+
+```elixir
+# Register a reducer
+reducer = fn state, action ->
+  case action do
+    {:set_user, user} -> %{state | user: user}
+    :increment -> %{state | count: state.count + 1}
+    _ -> state
+  end
+end
+
+Phoenix.SessionProcess.register_reducer(session_id, :main_reducer, reducer)
+
+# Dispatch actions (synchronous - returns new state)
+{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123}})
+
+# Dispatch actions (asynchronous - fire and forget)
+:ok = Phoenix.SessionProcess.dispatch(session_id, :increment, async: true)
+
+# Get current state
+{:ok, state} = Phoenix.SessionProcess.get_state(session_id)
+
+# Get state with selector
+{:ok, user} = Phoenix.SessionProcess.get_state(session_id, fn state -> state.user end)
+
+# Subscribe to state changes (with selector)
+{:ok, sub_id} = Phoenix.SessionProcess.subscribe(
+  session_id,
+  fn state -> state.user end,  # Only notified when user changes
+  :user_changed,               # Event name for messages
+  self()                       # Subscriber PID
+)
+
+# Receive notifications
+receive do
+  {:user_changed, user} -> IO.inspect(user, label: "User changed")
+end
+
+# Unsubscribe
+:ok = Phoenix.SessionProcess.unsubscribe(session_id, sub_id)
+
+# Register a selector (for reusable derived state)
+user_name_selector = fn state -> state.user && state.user.name end
+:ok = Phoenix.SessionProcess.register_selector(session_id, :user_name, user_name_selector)
+
+# Use registered selector
+{:ok, name} = Phoenix.SessionProcess.select(session_id, :user_name)
+```
+
+**Key Features:**
+- **Dispatch actions**: Synchronous or asynchronous state updates
+- **Selectors**: Subscribe to specific state slices with change detection
+- **Process monitoring**: Automatic subscription cleanup
+- **Immediate delivery**: Subscribers receive current state on subscribe
+- **Reducers**: Composable state transformation functions
 
 ### Advanced Usage
 

@@ -1,7 +1,7 @@
 defmodule Phoenix.SessionProcess.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.6.0"
   @source_url "https://github.com/gsmlg-dev/phoenix_session_process"
 
   def project do
