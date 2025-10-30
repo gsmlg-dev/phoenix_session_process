@@ -1002,23 +1002,6 @@ defmodule Phoenix.SessionProcess do
     end
   end
 
-  @doc false
-  def __on_reducer_definition__(env, _kind, _name, _args, _guards, _body) do
-    module = env.module
-
-    # Check for @throttle attribute
-    if throttle = Module.get_attribute(module, :throttle) do
-      Phoenix.SessionProcess.Redux.ReducerCompiler.register_throttle(module, throttle)
-      Module.delete_attribute(module, :throttle)
-    end
-
-    # Check for @debounce attribute
-    if debounce = Module.get_attribute(module, :debounce) do
-      Phoenix.SessionProcess.Redux.ReducerCompiler.register_debounce(module, debounce)
-      Module.delete_attribute(module, :debounce)
-    end
-  end
-
   # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(:process) do
     quote do
@@ -1385,7 +1368,8 @@ defmodule Phoenix.SessionProcess do
 
           # Format 3: {name, Module, action_prefix} - explicit name and action_prefix
           {name, module, action_prefix}, acc
-          when is_atom(name) and is_atom(module) and (is_binary(action_prefix) or is_nil(action_prefix)) ->
+          when is_atom(name) and is_atom(module) and
+                 (is_binary(action_prefix) or is_nil(action_prefix)) ->
             validate_reducer_module!(module)
 
             if Map.has_key?(acc, name) do
@@ -1703,6 +1687,23 @@ defmodule Phoenix.SessionProcess do
       )
 
       use Phoenix.SessionProcess, :process
+    end
+  end
+
+  @doc false
+  def __on_reducer_definition__(env, _kind, _name, _args, _guards, _body) do
+    module = env.module
+
+    # Check for @throttle attribute
+    if throttle = Module.get_attribute(module, :throttle) do
+      Phoenix.SessionProcess.Redux.ReducerCompiler.register_throttle(module, throttle)
+      Module.delete_attribute(module, :throttle)
+    end
+
+    # Check for @debounce attribute
+    if debounce = Module.get_attribute(module, :debounce) do
+      Phoenix.SessionProcess.Redux.ReducerCompiler.register_debounce(module, debounce)
+      Module.delete_attribute(module, :debounce)
     end
   end
 end

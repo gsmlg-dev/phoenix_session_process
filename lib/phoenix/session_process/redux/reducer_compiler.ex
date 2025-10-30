@@ -76,7 +76,8 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
     # action_prefix can be nil or "" to indicate no prefix
     action_prefix =
       cond do
-        action_prefix == nil and Module.get_attribute(env.module, :action_prefix, :__not_set__) == :__not_set__ ->
+        action_prefix == nil and
+            Module.get_attribute(env.module, :action_prefix, :__not_set__) == :__not_set__ ->
           # @action_prefix not set at all, default to stringified name
           to_string(name)
 
