@@ -824,6 +824,10 @@ defmodule Phoenix.SessionProcess do
       defmodule MyApp.Reducers.UserReducer do
         use Phoenix.SessionProcess, :reducer
 
+        def init_state do
+          %{users: [], loading: false, query: nil}
+        end
+
         @throttle {"fetch-list", "3000ms"}
         def handle_action(%{type: "fetch-list"}, state) do
           # Throttled: Only executes once per 3 seconds
@@ -848,6 +852,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Callbacks
 
+  - `init_state/0` - Define initial state for this reducer's slice (optional, defaults to `%{}`)
   - `handle_action/2` - Handle synchronous actions, return updated state
   - `handle_async/3` - Handle async actions with dispatch callback, return updated state
 
@@ -857,6 +862,12 @@ defmodule Phoenix.SessionProcess do
   - `@debounce {action_pattern, duration}` - Debounce action (delay execution, reset timer)
 
   Duration format: `"500ms"`, `"1s"`, `"5m"`, `"1h"`
+
+  ## State Initialization
+
+  Each reducer defines its initial state via `init_state/0`. When using `combined_reducers/0`,
+  the SessionProcess automatically calls each reducer's `init_state/0` to build the complete
+  initial state with each reducer's slice.
   """
   defmacro __using__(:reducer) do
     quote do
@@ -872,6 +883,27 @@ defmodule Phoenix.SessionProcess do
 
       # Hook to capture attributes when functions are defined
       @on_definition {Phoenix.SessionProcess, :__on_reducer_definition__}
+
+      @doc """
+      Initialize the reducer's state slice.
+
+      Override this function to provide the initial state for this reducer's slice.
+
+      ## Returns
+
+      - `initial_state` - The initial state map for this reducer
+
+      ## Examples
+
+          def init_state do
+            %{users: [], loading: false, query: nil}
+          end
+
+          def init_state do
+            %{items: [], total: 0}
+          end
+      """
+      def init_state, do: %{}
 
       @doc """
       Handle synchronous actions.
@@ -931,7 +963,7 @@ defmodule Phoenix.SessionProcess do
       """
       def handle_async(_action, _dispatch, state), do: state
 
-      defoverridable handle_action: 2, handle_async: 3
+      defoverridable init_state: 0, handle_action: 2, handle_async: 3
     end
   end
 
@@ -1004,13 +1036,26 @@ defmodule Phoenix.SessionProcess do
             %{}
           end
 
+        # Initialize state slices from each reducer's init_state
+        app_state =
+          Enum.reduce(combined, user_state, fn {slice_key, module}, acc_state ->
+            slice_initial_state =
+              if function_exported?(module, :init_state, 0) do
+                module.init_state()
+              else
+                %{}
+              end
+
+            Map.put(acc_state, slice_key, slice_initial_state)
+          end)
+
         # Build reducer map from combined_reducers
         redux_reducers = build_combined_reducers(combined)
 
         # Wrap in Redux infrastructure
         state = %{
-          # User's application state
-          app_state: user_state,
+          # User's application state (with initialized reducer slices)
+          app_state: app_state,
 
           # Redux infrastructure (internal, prefixed with _redux_)
           _redux_reducers: redux_reducers,

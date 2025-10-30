@@ -7,6 +7,10 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   defmodule UserReducer do
     use Phoenix.SessionProcess, :reducer
 
+    def init_state do
+      %{users: [], fetch_count: 0, search_query: nil}
+    end
+
     @throttle {"fetch-users", "100ms"}
     def handle_action(%{type: "fetch-users"}, state) do
       Map.update(state, :fetch_count, 1, &(&1 + 1))
@@ -28,6 +32,10 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   defmodule CartReducer do
     use Phoenix.SessionProcess, :reducer
 
+    def init_state do
+      %{items: []}
+    end
+
     def handle_action(%{type: "add-item", payload: item}, state) do
       Map.update(state, :items, [item], &[item | &1])
     end
@@ -44,11 +52,8 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     use Phoenix.SessionProcess, :process
 
     def init_state(_arg) do
-      %{
-        global_count: 0,
-        users: %{users: [], fetch_count: 0, search_query: nil},
-        cart: %{items: []}
-      }
+      # Only define state not managed by reducers
+      %{global_count: 0}
     end
 
     def combined_reducers do
@@ -73,6 +78,19 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   end
 
   describe "reducer modules" do
+    test "verifies reducer init_state is called for each slice", %{session_id: session_id} do
+      state = SessionProcess.get_state(session_id)
+
+      # Verify users slice was initialized from UserReducer.init_state/0
+      assert state.users == %{users: [], fetch_count: 0, search_query: nil}
+
+      # Verify cart slice was initialized from CartReducer.init_state/0
+      assert state.cart == %{items: []}
+
+      # Verify global state from SessionProcess init_state/1
+      assert state.global_count == 0
+    end
+
     test "verifies reducer module metadata functions exist", %{session_id: _session_id} do
       # Check throttle metadata
       assert [{_, "100ms"}] = UserReducer.__reducer_throttles__()
