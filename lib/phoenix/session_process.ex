@@ -816,6 +816,142 @@ defmodule Phoenix.SessionProcess do
     end
   end
 
+  @doc """
+  Defines a reducer module for managing state slices.
+
+  ## Usage
+
+      defmodule MyApp.Reducers.UserReducer do
+        use Phoenix.SessionProcess, :reducer
+
+        @throttle {"fetch-list", "3000ms"}
+        def handle_action(%{type: "fetch-list"}, state) do
+          # Throttled: Only executes once per 3 seconds
+          %{state | loading: true}
+        end
+
+        @debounce {"update-query", "500ms"}
+        def handle_action(%{type: "update-query", payload: query}, state) do
+          # Debounced: Waits 500ms after last call
+          %{state | query: query}
+        end
+
+        def handle_async(%{type: "load", payload: %{page: page}}, dispatch, state) do
+          # Async action with dispatch callback
+          Task.async(fn ->
+            data = fetch_data(page)
+            dispatch.(%{type: "load_success", payload: data})
+          end)
+          %{state | loading: true}
+        end
+      end
+
+  ## Callbacks
+
+  - `handle_action/2` - Handle synchronous actions, return updated state
+  - `handle_async/3` - Handle async actions with dispatch callback, return updated state
+
+  ## Module Attributes
+
+  - `@throttle {action_pattern, duration}` - Throttle action (execute immediately, then block)
+  - `@debounce {action_pattern, duration}` - Debounce action (delay execution, reset timer)
+
+  Duration format: `"500ms"`, `"1s"`, `"5m"`, `"1h"`
+  """
+  defmacro __using__(:reducer) do
+    quote do
+      @before_compile Phoenix.SessionProcess.Redux.ReducerCompiler
+
+      # Accumulators for all throttle/debounce configs
+      Module.register_attribute(__MODULE__, :action_throttles, accumulate: true)
+      Module.register_attribute(__MODULE__, :action_debounces, accumulate: true)
+
+      # Single-value attributes that get reset after each function definition
+      Module.register_attribute(__MODULE__, :throttle, accumulate: false)
+      Module.register_attribute(__MODULE__, :debounce, accumulate: false)
+
+      # Hook to capture attributes when functions are defined
+      @on_definition {Phoenix.SessionProcess, :__on_reducer_definition__}
+
+      @doc """
+      Handle synchronous actions.
+
+      Override this function to process actions and return updated state.
+
+      ## Parameters
+
+      - `action` - The action to process (any term)
+      - `state` - The current state slice for this reducer
+
+      ## Returns
+
+      - `new_state` - The updated state slice
+
+      ## Examples
+
+          def handle_action(:increment, state) do
+            %{state | count: state.count + 1}
+          end
+
+          def handle_action(%{type: "set_user", payload: user}, state) do
+            %{state | current_user: user}
+          end
+      """
+      def handle_action(_action, state), do: state
+
+      @doc """
+      Handle asynchronous actions with dispatch callback.
+
+      Override this function for actions that require async operations.
+      The dispatch callback allows you to dispatch new actions from async context.
+
+      ## Parameters
+
+      - `action` - The action to process
+      - `dispatch` - Callback function to dispatch new actions: `dispatch.(action)`
+      - `state` - The current state slice for this reducer
+
+      ## Returns
+
+      - `new_state` - The updated state slice
+
+      ## Examples
+
+          def handle_async(%{type: "fetch_user", payload: id}, dispatch, state) do
+            Task.async(fn ->
+              user = API.fetch_user(id)
+              dispatch.(%{type: "fetch_user_success", payload: user})
+            rescue
+              error ->
+                dispatch.(%{type: "fetch_user_error", payload: %{error: error}})
+            end)
+
+            %{state | loading: true}
+          end
+      """
+      def handle_async(_action, _dispatch, state), do: state
+
+      defoverridable handle_action: 2, handle_async: 3
+    end
+  end
+
+  @doc false
+  def __on_reducer_definition__(env, _kind, _name, _args, _guards, _body) do
+    module = env.module
+
+    # Check for @throttle attribute
+    if throttle = Module.get_attribute(module, :throttle) do
+      Phoenix.SessionProcess.Redux.ReducerCompiler.register_throttle(module, throttle)
+      Module.delete_attribute(module, :throttle)
+    end
+
+    # Check for @debounce attribute
+    if debounce = Module.get_attribute(module, :debounce) do
+      Phoenix.SessionProcess.Redux.ReducerCompiler.register_debounce(module, debounce)
+      Module.delete_attribute(module, :debounce)
+    end
+  end
+
   # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(:process) do
     quote do
@@ -853,12 +989,23 @@ defmodule Phoenix.SessionProcess do
       @doc """
       Initialize session process state with Redux infrastructure.
 
-      Override `user_init/1` to provide your application's initial state.
+      Override `init_state/1` to provide your application's initial state.
       """
       @impl true
       def init(arg) do
-        # Call user's initialization
-        user_state = user_init(arg)
+        # Call user's initialization - init_state/1 delegates to user_init/1 by default
+        user_state = init_state(arg)
+
+        # Load combined reducers if defined
+        combined =
+          if function_exported?(__MODULE__, :combined_reducers, 0) do
+            combined_reducers()
+          else
+            %{}
+          end
+
+        # Build reducer map from combined_reducers
+        redux_reducers = build_combined_reducers(combined)
 
         # Wrap in Redux infrastructure
         state = %{
@@ -866,21 +1013,77 @@ defmodule Phoenix.SessionProcess do
           app_state: user_state,
 
           # Redux infrastructure (internal, prefixed with _redux_)
-          _redux_reducers: %{},
+          _redux_reducers: redux_reducers,
+          _redux_reducer_slices: Map.keys(combined),
           _redux_selectors: %{},
           _redux_subscriptions: [],
           _redux_middleware: [],
           _redux_history: [],
-          _redux_max_history: 100
+          _redux_max_history: 100,
+          # NEW: Throttle/debounce state
+          _redux_throttle_state: %{},
+          _redux_debounce_timers: %{}
         }
 
         {:ok, state}
       end
 
       @doc """
-      User-defined initialization.
+      Initialize your application's state.
+
+      Override this callback to provide your initial state as a map.
+      This replaces the deprecated `user_init/1` callback.
+
+      For backward compatibility, init_state/1 delegates to user_init/1 by default.
+      You can override either callback - init_state/1 is preferred for new code.
+
+      ## Examples
+
+          def init_state(_arg) do
+            %{count: 0, user: nil, items: []}
+          end
+
+          def init_state(user_id) do
+            %{user_id: user_id, cart: [], preferences: %{}}
+          end
+      """
+      def init_state(arg), do: user_init(arg)
+
+      @doc """
+      Define combined reducers for state slicing.
+
+      Override this callback to return a map of state slice names to reducer modules.
+      Each reducer module manages its own portion of the state.
+
+      ## Examples
+
+          def combined_reducers() do
+            %{
+              users: MyApp.Reducers.UserReducer,
+              cart: MyApp.Reducers.CartReducer,
+              notifications: MyApp.Reducers.NotificationReducer
+            }
+          end
+
+      ## State Slicing
+
+      If you define combined_reducers, actions will be routed to the appropriate
+      reducer based on the state slice. Each reducer receives only its slice of state:
+
+      - UserReducer receives `state.users`
+      - CartReducer receives `state.cart`
+      - NotificationReducer receives `state.notifications`
+      """
+      def combined_reducers, do: %{}
+
+      @doc deprecated: "Use init_state/1 instead"
+      @doc """
+      User-defined initialization (DEPRECATED).
 
       Return your application's initial state as a map.
+
+      **DEPRECATED**: This callback is deprecated as of v0.7.0.
+      Please use `init_state/1` instead for better clarity.
 
       ## Examples
 
@@ -896,28 +1099,21 @@ defmodule Phoenix.SessionProcess do
 
       @impl true
       def handle_call({:dispatch_action, action}, _from, state) do
-        {new_app_state, new_subscriptions} = dispatch_with_reducers(action, state)
+        new_state = dispatch_with_reducers(action, state)
 
-        new_state = %{
-          state
-          | app_state: new_app_state,
-            _redux_subscriptions: new_subscriptions,
-            _redux_history: add_to_history(action, state._redux_history, state._redux_max_history)
+        # Add action to history
+        new_state_with_history = %{
+          new_state
+          | _redux_history:
+              add_to_history(action, new_state._redux_history, new_state._redux_max_history)
         }
 
-        {:reply, {:ok, new_app_state}, new_state}
+        {:reply, {:ok, new_state_with_history.app_state}, new_state_with_history}
       end
 
       @impl true
       def handle_cast({:dispatch_action, action}, state) do
-        {new_app_state, new_subscriptions} = dispatch_with_reducers(action, state)
-
-        new_state = %{
-          state
-          | app_state: new_app_state,
-            _redux_subscriptions: new_subscriptions
-        }
-
+        new_state = dispatch_with_reducers(action, state)
         {:noreply, new_state}
       end
 
@@ -1009,28 +1205,142 @@ defmodule Phoenix.SessionProcess do
         {:noreply, %{state | _redux_subscriptions: new_subs}}
       end
 
+      @impl true
+      def handle_info({:debounced_action, module, action}, state) do
+        # Process the debounced action
+        slice_key =
+          Enum.find(state._redux_reducer_slices, fn key ->
+            Map.get(state._redux_reducers, key) != nil
+          end)
+
+        if slice_key do
+          # Apply the reducer
+          slice_state = Map.get(state.app_state, slice_key, %{})
+          new_slice_state = module.handle_action(action, slice_state)
+          new_app_state = Map.put(state.app_state, slice_key, new_slice_state)
+
+          # Notify subscriptions if changed
+          new_subscriptions =
+            if new_app_state != state.app_state do
+              notify_all_subscriptions(new_app_state, state._redux_subscriptions)
+            else
+              state._redux_subscriptions
+            end
+
+          new_state = %{
+            state
+            | app_state: new_app_state,
+              _redux_subscriptions: new_subscriptions
+          }
+
+          {:noreply, new_state}
+        else
+          {:noreply, state}
+        end
+      end
+
       # ========================================================================
       # Private Helpers
       # ========================================================================
+
+      defp build_combined_reducers(combined) do
+        Enum.into(combined, %{}, fn {slice_key, module} ->
+          # Store metadata tuple instead of wrapper function
+          {slice_key, {:combined, module, slice_key}}
+        end)
+      end
+
+      defp apply_combined_reducer(module, action, slice_key, app_state, internal_state) do
+        alias Phoenix.SessionProcess.Redux.ActionRateLimiter
+
+        # Get the state slice for this reducer
+        slice_state = Map.get(app_state, slice_key, %{})
+
+        # Check throttle first
+        if ActionRateLimiter.should_throttle?(module, action, internal_state) do
+          # Skip action due to throttle
+          {app_state, internal_state}
+        else
+          # Check debounce
+          if ActionRateLimiter.should_debounce?(module, action) do
+            # Schedule debounced action
+            new_internal_state =
+              ActionRateLimiter.schedule_debounce(module, action, self(), internal_state)
+
+            # Return unchanged app_state but updated internal_state
+            {app_state, new_internal_state}
+          else
+            # Execute action
+            new_slice_state =
+              if function_exported?(module, :handle_async, 3) and async_action?(action) do
+                # Async action - provide dispatch callback
+                dispatch_fn = fn new_action ->
+                  GenServer.cast(self(), {:dispatch_action, new_action})
+                end
+
+                module.handle_async(action, dispatch_fn, slice_state)
+              else
+                # Synchronous action
+                module.handle_action(action, slice_state)
+              end
+
+            # Update app_state with new slice
+            new_app_state = Map.put(app_state, slice_key, new_slice_state)
+
+            # Record throttle if needed
+            new_internal_state = ActionRateLimiter.record_throttle(module, action, internal_state)
+
+            {new_app_state, new_internal_state}
+          end
+        end
+      end
+
+      defp async_action?(%{type: type}) when is_binary(type),
+        do: String.ends_with?(type, "_async")
+
+      defp async_action?(_), do: false
 
       defp dispatch_with_reducers(action, state) do
         old_app_state = state.app_state
 
         # Apply all registered reducers
-        new_app_state =
-          Enum.reduce(state._redux_reducers, old_app_state, fn {_name, reducer_fn}, acc_state ->
-            reducer_fn.(action, acc_state)
+        {new_app_state, new_internal_state} =
+          Enum.reduce(state._redux_reducers, {old_app_state, state}, fn
+            # Combined reducer (from combined_reducers/0)
+            {_name, {:combined, module, slice_key}}, {acc_app_state, acc_internal_state} ->
+              {updated_app_state, updated_internal_state} =
+                apply_combined_reducer(
+                  module,
+                  action,
+                  slice_key,
+                  acc_app_state,
+                  acc_internal_state
+                )
+
+              {updated_app_state, updated_internal_state}
+
+            # Manual reducer (from register_reducer/3)
+            {_name, reducer_fn}, {acc_app_state, acc_internal_state} when is_function(reducer_fn) ->
+              new_acc_app_state = reducer_fn.(action, acc_app_state)
+              {new_acc_app_state, acc_internal_state}
           end)
 
         # Notify subscribers if state changed
         new_subscriptions =
           if new_app_state != old_app_state do
-            notify_all_subscriptions(new_app_state, state._redux_subscriptions)
+            notify_all_subscriptions(new_app_state, new_internal_state._redux_subscriptions)
           else
-            state._redux_subscriptions
+            new_internal_state._redux_subscriptions
           end
 
-        {new_app_state, new_subscriptions}
+        # Return updated internal state with new app_state and subscriptions
+        updated_internal_state = %{
+          new_internal_state
+          | app_state: new_app_state,
+            _redux_subscriptions: new_subscriptions
+        }
+
+        updated_internal_state
       end
 
       defp notify_all_subscriptions(new_state, subscriptions) do
@@ -1056,6 +1366,8 @@ defmodule Phoenix.SessionProcess do
       # ========================================================================
 
       defoverridable init: 1,
+                     init_state: 1,
+                     combined_reducers: 0,
                      user_init: 1,
                      handle_call: 3,
                      handle_cast: 2,
