@@ -48,6 +48,12 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
       {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
     end
 
+    # Catch-all for unsupported messages
+    @impl true
+    def handle_call(msg, _from, state) do
+      {:reply, {:error, {:unsupported_message, msg}}, state}
+    end
+
     @impl true
     def handle_cast({:dispatch_async, action}, state) do
       new_redux = Redux.dispatch(state.redux, action, &reducer/2)
@@ -181,21 +187,11 @@ defmodule Phoenix.SessionProcess.LiveViewTest do
     test "returns error for unsupported state_key", %{session_id: session_id} do
       socket = %{assigns: %{}}
 
-      # Call with an unsupported message - this will crash the session process
-      # So we need to catch the exit
-      Process.flag(:trap_exit, true)
+      # Call with an unsupported message - should return an error tuple
+      result = SessionLV.mount_session(socket, session_id, @pubsub_name, :invalid_message)
 
-      result =
-        try do
-          SessionLV.mount_session(socket, session_id, @pubsub_name, :invalid_message)
-        catch
-          :exit, _ -> {:error, :process_crashed}
-        end
-
-      # Should get an error (either from timeout or process crash)
-      assert match?({:error, _}, result)
-
-      Process.flag(:trap_exit, false)
+      # Should get an error response from the catch-all handle_call clause
+      assert {:error, {:unsupported_message, :invalid_message}} = result
     end
   end
 
