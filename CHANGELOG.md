@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - v1.0.0
+
+### Breaking Changes
+
+- **Renamed `@prefix` to `@action_prefix` in reducer modules**
+  - All reducer modules must now use `@action_prefix` instead of `@prefix`
+  - The `@action_prefix` can be `nil` or `""` to create catch-all reducers that handle all actions
+  - Migration: Simply rename `@prefix` to `@action_prefix` in your reducer modules
+  - Example:
+    ```elixir
+    # Before (v0.x)
+    defmodule MyReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :my_reducer
+      @prefix "my"  # Old name
+    end
+
+    # After (v1.0.0)
+    defmodule MyReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :my_reducer
+      @action_prefix "my"  # New name
+    end
+    ```
+
+- **Changed `dispatch/3` and `dispatch_async/3` return values**
+  - Both functions now return `:ok` instead of `{:ok, new_state}`
+  - All dispatches are now async (fire-and-forget) by default
+  - Use `get_state/1-2` to retrieve state after dispatch
+  - Migration:
+    ```elixir
+    # Before (v0.x)
+    {:ok, new_state} = SessionProcess.dispatch(session_id, :increment)
+    IO.inspect(new_state)
+
+    # After (v1.0.0)
+    :ok = SessionProcess.dispatch(session_id, :increment)
+    new_state = SessionProcess.get_state(session_id)
+    IO.inspect(new_state)
+    ```
+
+- **Removed deprecated `Phoenix.SessionProcess.Redux` module**
+  - The old struct-based Redux API has been removed
+  - Use the Redux Store API (built into SessionProcess) instead
+  - See migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+
+### Added
+
+- **`dispatch_async/3` function for explicit async dispatch**
+  - Same behavior as `dispatch/3` but with clearer naming for async operations
+  - Makes code intent more explicit when dispatching async actions
+  - Example: `:ok = SessionProcess.dispatch_async(session_id, :increment)`
+
+### Changed
+
+- **Improved action routing with `@action_prefix`**
+  - More consistent naming aligns with action routing semantics
+  - Catch-all reducers now explicitly use `nil` or `""` for `@action_prefix`
+  - Better documentation and examples for action routing
+
+### Migration Guide
+
+1. **Rename `@prefix` to `@action_prefix` in all reducer modules**
+   - Search your codebase for `@prefix` in reducer modules
+   - Replace with `@action_prefix`
+   - No logic changes required
+
+2. **Update dispatch call sites to handle `:ok` return value**
+   - Replace `{:ok, state} = dispatch(...)` with `:ok = dispatch(...)`
+   - Add `get_state(session_id)` calls where you need the updated state
+   - Consider: Do you actually need the state? Many dispatches are fire-and-forget
+
+3. **Remove uses of deprecated Redux module**
+   - If using `Phoenix.SessionProcess.Redux` struct-based API
+   - Migrate to Redux Store API (SessionProcess IS the store)
+   - See `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed migration
+
+### Notes
+
+- All changes are breaking but migrations are straightforward
+- Most codebases will only need to rename `@prefix` to `@action_prefix`
+- Dispatch return value change makes async nature more explicit
+- v0.9.x will be the last version supporting deprecated APIs
+
 ## [0.6.0] - 2025-10-29
 
 ### Added

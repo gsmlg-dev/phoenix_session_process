@@ -277,8 +277,8 @@ session_id = conn.assigns.session_id
 # Start session
 Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
 
-# Register reducer
-reducer = fn state, action ->
+# Register reducer (note: first parameter is action, second is state)
+reducer = fn action, state ->
   case action do
     :increment -> %{state | count: state.count + 1}
     {:set_user, user} -> %{state | user: user}
@@ -288,8 +288,11 @@ end
 
 Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
 
-# Dispatch actions
-{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, :increment)
+# Dispatch actions (returns :ok, all dispatches are async)
+:ok = Phoenix.SessionProcess.dispatch(session_id, :increment)
+
+# Get state after dispatch
+state = Phoenix.SessionProcess.get_state(session_id)
 ```
 
 **LiveView (NEW API):**
@@ -366,16 +369,19 @@ SessionProcess itself is a Redux store with built-in infrastructure:
 # Define initial state
 def user_init(_), do: %{count: 0}
 
-# Register reducer
-SessionProcess.register_reducer(session_id, :counter, fn state, action ->
+# Register reducer (note: first parameter is action, second is state)
+SessionProcess.register_reducer(session_id, :counter, fn action, state ->
   case action do
     :increment -> %{state | count: state.count + 1}
     _ -> state
   end
 end)
 
-# Dispatch actions
-{:ok, new_state} = SessionProcess.dispatch(session_id, :increment)
+# Dispatch actions (returns :ok)
+:ok = SessionProcess.dispatch(session_id, :increment)
+
+# Get state after dispatch
+state = SessionProcess.get_state(session_id)
 
 # Subscribe with selector
 {:ok, sub_id} = SessionProcess.subscribe(

@@ -9,7 +9,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     alias Phoenix.SessionProcess.Redux.Action
 
     @name :users
-    @prefix "user"
+    @action_prefix "user"
 
     def init_state do
       %{users: [], fetch_count: 0, search_query: nil}
@@ -42,7 +42,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     alias Phoenix.SessionProcess.Redux.Action
 
     @name :cart
-    @prefix "cart"
+    @action_prefix "cart"
 
     def init_state do
       %{items: []}
@@ -64,13 +64,13 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     def handle_action(_action, state), do: state
   end
 
-  # Reducer with custom @name and @prefix
+  # Reducer with custom @name and @action_prefix
   defmodule ShippingReducer do
     use Phoenix.SessionProcess, :reducer
     alias Phoenix.SessionProcess.Redux.Action
 
     @name :shipping
-    @prefix "ship"
+    @action_prefix "ship"
 
     def init_state do
       %{address: nil, cost: 0}
@@ -83,7 +83,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     def handle_action(_action, state), do: state
   end
 
-  # Reducer with @name but no @prefix (should default to "inventory")
+  # Reducer with @name but no @action_prefix (should default to "inventory")
   defmodule InventoryReducer do
     use Phoenix.SessionProcess, :reducer
     alias Phoenix.SessionProcess.Redux.Action
@@ -107,7 +107,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     alias Phoenix.SessionProcess.Redux.Action
 
     @name :notifications
-    @prefix "notify"
+    @action_prefix "notify"
 
     # No init_state/0 defined
 
@@ -124,7 +124,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     alias Phoenix.SessionProcess.Redux.Action
 
     @name :special_chars_test
-    @prefix "special-chars.test"
+    @action_prefix "special-chars.test"
 
     def init_state, do: %{data: "test"}
 
@@ -176,7 +176,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     use Phoenix.SessionProcess, :reducer
 
     @name :users
-    @prefix "users"
+    @action_prefix "users"
 
     def init_state, do: %{count: 0}
 
@@ -190,7 +190,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     use Phoenix.SessionProcess, :reducer
 
     @name :cart
-    @prefix "cart"
+    @action_prefix "cart"
 
     def init_state, do: %{count: 0}
 
@@ -631,7 +631,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
         def combined_reducers do
           [
-            # Format 1: Module - uses @name and @prefix
+            # Format 1: Module - uses @name and @action_prefix
             UserReducer,
             # Format 2: {name, Module} - custom name, prefix = "cart"
             {:cart, CartReducer},
@@ -667,7 +667,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
   end
 
-  describe "@name and @prefix metadata" do
+  describe "@name and @action_prefix metadata" do
     test "verifies __reducer_name__ returns correct name" do
       assert UserReducer.__reducer_name__() == :users
       assert CartReducer.__reducer_name__() == :cart
@@ -675,15 +675,15 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert InventoryReducer.__reducer_name__() == :inventory
     end
 
-    test "verifies __reducer_prefix__ returns correct prefix" do
-      assert UserReducer.__reducer_prefix__() == "user"
-      assert CartReducer.__reducer_prefix__() == "cart"
-      assert ShippingReducer.__reducer_prefix__() == "ship"
-      # InventoryReducer has no @prefix, should default to stringified @name
-      assert InventoryReducer.__reducer_prefix__() == "inventory"
+    test "verifies __reducer_action_prefix__ returns correct prefix" do
+      assert UserReducer.__reducer_action_prefix__() == "user"
+      assert CartReducer.__reducer_action_prefix__() == "cart"
+      assert ShippingReducer.__reducer_action_prefix__() == "ship"
+      # InventoryReducer has no @action_prefix, should default to stringified @name
+      assert InventoryReducer.__reducer_action_prefix__() == "inventory"
     end
 
-    test "reducer with @name but no @prefix defaults to stringified name" do
+    test "reducer with @name but no @action_prefix defaults to stringified name" do
       defmodule DefaultPrefixSession do
         use Phoenix.SessionProcess, :process
 
@@ -799,7 +799,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
         def combined_reducers do
           [
-            # ShippingReducer has @prefix "ship", but we override with "shipping"
+            # ShippingReducer has @action_prefix "ship", but we override with "shipping"
             {:shipping, ShippingReducer, "shipping"}
           ]
         end
@@ -852,7 +852,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
   end
 
-  describe "special characters in @name and @prefix" do
+  describe "special characters in @name and @action_prefix" do
     test "handles special characters in name and prefix" do
       defmodule SpecialCharsSession do
         use Phoenix.SessionProcess, :process
@@ -1190,9 +1190,9 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
         def combined_reducers do
           [
             UserReducer,
-            # UserReducer has @name :users and @prefix "user"
+            # UserReducer has @name :users and @action_prefix "user"
             CartReducer
-            # CartReducer has @name :cart and @prefix "cart"
+            # CartReducer has @name :cart and @action_prefix "cart"
           ]
         end
       end

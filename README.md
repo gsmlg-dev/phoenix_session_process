@@ -147,6 +147,8 @@ end
 
 Phoenix.SessionProcess now includes built-in Redux functionality - **SessionProcess IS the Redux store**. No need to manage separate Redux structs or manual state updates.
 
+> **Note**: v1.0.0 is coming soon with enhanced reducer routing and action normalization. See CHANGELOG.md for details.
+
 #### Session Process as Redux Store
 
 ```elixir
@@ -163,7 +165,7 @@ end
 {:ok, _pid} = Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
 
 # Register a reducer
-reducer = fn state, action ->
+reducer = fn action, state ->
   case action do
     {:set_user, user} -> %{state | user: user}
     :increment -> %{state | count: state.count + 1}
@@ -173,11 +175,14 @@ end
 
 Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
 
-# Dispatch actions (synchronous)
-{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123, name: "Alice"}})
+# Dispatch actions (all dispatches are async and return :ok)
+:ok = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123, name: "Alice"}})
 
-# Dispatch actions (asynchronous)
-:ok = Phoenix.SessionProcess.dispatch(session_id, :increment, async: true)
+# Or use dispatch_async for clarity (same behavior)
+:ok = Phoenix.SessionProcess.dispatch_async(session_id, :increment)
+
+# Get state after dispatch
+state = Phoenix.SessionProcess.get_state(session_id)
 
 # Subscribe to state changes
 Phoenix.SessionProcess.subscribe(
@@ -405,8 +410,8 @@ end
 The built-in Redux Store API provides state management with actions, reducers, and subscriptions:
 
 ```elixir
-# Register a reducer
-reducer = fn state, action ->
+# Register a reducer (note: first parameter is action, second is state)
+reducer = fn action, state ->
   case action do
     {:set_user, user} -> %{state | user: user}
     :increment -> %{state | count: state.count + 1}
@@ -416,17 +421,17 @@ end
 
 Phoenix.SessionProcess.register_reducer(session_id, :main_reducer, reducer)
 
-# Dispatch actions (synchronous - returns new state)
-{:ok, new_state} = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123}})
+# Dispatch actions (all dispatches return :ok and are async)
+:ok = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123}})
 
-# Dispatch actions (asynchronous - fire and forget)
-:ok = Phoenix.SessionProcess.dispatch(session_id, :increment, async: true)
+# Or use dispatch_async for clarity (same behavior)
+:ok = Phoenix.SessionProcess.dispatch_async(session_id, :increment)
 
-# Get current state
-{:ok, state} = Phoenix.SessionProcess.get_state(session_id)
+# Get current state after dispatch
+state = Phoenix.SessionProcess.get_state(session_id)
 
 # Get state with selector
-{:ok, user} = Phoenix.SessionProcess.get_state(session_id, fn state -> state.user end)
+user = Phoenix.SessionProcess.get_state(session_id, fn state -> state.user end)
 
 # Subscribe to state changes (with selector)
 {:ok, sub_id} = Phoenix.SessionProcess.subscribe(
@@ -449,7 +454,7 @@ user_name_selector = fn state -> state.user && state.user.name end
 :ok = Phoenix.SessionProcess.register_selector(session_id, :user_name, user_name_selector)
 
 # Use registered selector
-{:ok, name} = Phoenix.SessionProcess.select(session_id, :user_name)
+name = Phoenix.SessionProcess.select(session_id, :user_name)
 ```
 
 **Key Features:**

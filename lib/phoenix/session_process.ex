@@ -556,56 +556,82 @@ defmodule Phoenix.SessionProcess do
   # ============================================================================
 
   @doc """
-  Dispatch an action to a session process.
+  Dispatch an action to a session process asynchronously (fire-and-forget).
 
   The action will be processed through all registered reducers and subscribers
-  will be notified if their selected state changed.
+  will be notified if their selected state changed. This function returns
+  immediately without waiting for the action to be processed.
 
   ## Parameters
   - `session_id` - Session identifier
   - `action` - Action to dispatch (any term)
   - `opts` - Options keyword list:
-    - `:async` - If true, dispatch asynchronously (default: false)
-    - `:timeout` - Call timeout in ms (default: 5000)
+    - `:payload` - Payload for the action
+    - `:reducers` - List of reducer names to target
+    - `:reducer_prefix` - Prefix to filter reducers by
+    - `:async` - Ignored (always async)
 
   ## Returns
-  - `{:ok, new_state}` - Synchronous dispatch returns new state
-  - `:ok` - Asynchronous dispatch returns immediately
-  - `{:error, reason}` - If session not found or dispatch fails
+  - `:ok` - Action dispatched successfully
+  - `{:error, {:session_not_found, session_id}}` - If session doesn't exist
 
   ## Examples
 
-      # Synchronous dispatch
-      {:ok, new_state} = SessionProcess.dispatch(session_id, {:increment, 1})
+      # Simple action
+      :ok = SessionProcess.dispatch(session_id, "user.reload")
 
-      # Asynchronous dispatch
-      :ok = SessionProcess.dispatch(session_id, {:increment, 1}, async: true)
+      # Action with payload
+      :ok = SessionProcess.dispatch(session_id, "user.update", payload: %{name: "Alice"})
 
-      # With timeout
-      {:ok, new_state} = SessionProcess.dispatch(session_id, action, timeout: 10_000)
+      # Target specific reducers
+      :ok = SessionProcess.dispatch(session_id, "reload", reducers: [:user, :cart])
+
+      # Use prefix routing
+      :ok = SessionProcess.dispatch(session_id, "fetch-data", reducer_prefix: "user")
   """
-  @spec dispatch(binary(), any(), keyword()) :: {:ok, map()} | :ok | {:error, term()}
+  @spec dispatch(binary(), any(), keyword()) :: :ok | {:error, term()}
   def dispatch(session_id, action, opts \\ []) do
     alias Phoenix.SessionProcess.Redux.Action
-
-    async = Keyword.get(opts, :async, false)
-    timeout = Keyword.get(opts, :timeout, 5000)
 
     # Normalize action with all opts (including routing metadata)
     normalized_action = Action.normalize(action, opts)
 
-    if async do
-      case ProcessSupervisor.session_process_pid(session_id) do
-        nil ->
-          {:error, {:session_not_found, session_id}}
+    case ProcessSupervisor.session_process_pid(session_id) do
+      nil ->
+        {:error, {:session_not_found, session_id}}
 
-        _pid ->
-          cast(session_id, {:dispatch_action, normalized_action})
-          :ok
-      end
-    else
-      call(session_id, {:dispatch_action, normalized_action}, timeout)
+      _pid ->
+        cast(session_id, {:dispatch_action, normalized_action})
+        :ok
     end
+  end
+
+  @doc """
+  Dispatch an action asynchronously with explicit function name.
+
+  This is an alias for `dispatch/3` for better clarity when dispatching async actions.
+  All dispatches are asynchronous by default.
+
+  ## Parameters
+  - `session_id` - Session identifier
+  - `action` - Action to dispatch
+  - `opts` - Options (see `dispatch/3`)
+
+  ## Returns
+  - `:ok` - Action dispatched successfully
+  - `{:error, {:session_not_found, session_id}}` - If session doesn't exist
+
+  ## Examples
+
+      # Explicit async dispatch
+      :ok = SessionProcess.dispatch_async(session_id, "user.reload")
+
+      # With payload
+      :ok = SessionProcess.dispatch_async(session_id, "update", payload: data)
+  """
+  @spec dispatch_async(binary(), any(), keyword()) :: :ok | {:error, term()}
+  def dispatch_async(session_id, action, opts \\ []) do
+    dispatch(session_id, action, opts)
   end
 
   @doc """
@@ -880,7 +906,7 @@ defmodule Phoenix.SessionProcess do
 
       # Reducer identity
       Module.register_attribute(__MODULE__, :name, accumulate: false)
-      Module.register_attribute(__MODULE__, :prefix, accumulate: false)
+      Module.register_attribute(__MODULE__, :action_prefix, accumulate: false)
 
       # Accumulators for all throttle/debounce configs
       Module.register_attribute(__MODULE__, :action_throttles, accumulate: true)
@@ -1109,9 +1135,9 @@ defmodule Phoenix.SessionProcess do
 
           def combined_reducers() do
             [
-              MyApp.Reducers.UserReducer,           # Uses module's @name and @prefix
-              {:cart, MyApp.Reducers.CartReducer},  # Custom name, prefix = "cart"
-              {:shipping, MyApp.Reducers.ShippingReducer, "ship"}  # Custom name and prefix
+              MyApp.Reducers.UserReducer,           # Uses module's @name and @action_prefix
+              {:cart, MyApp.Reducers.CartReducer},  # Custom name, action_prefix = "cart"
+              {:shipping, MyApp.Reducers.ShippingReducer, "ship"}  # Custom name and action_prefix
             ]
           end
 
@@ -1119,14 +1145,14 @@ defmodule Phoenix.SessionProcess do
 
       The list can contain three formats:
 
-      1. **Module atom** - Uses the reducer's `@name` and `@prefix` attributes:
-         - `UserReducer` → name from `@name`, prefix from `@prefix` or `@name`
+      1. **Module atom** - Uses the reducer's `@name` and `@action_prefix` attributes:
+         - `UserReducer` → name from `@name`, action_prefix from `@action_prefix` (defaults to stringified `@name`)
 
-      2. **{name, Module} tuple** - Custom name, prefix defaults to stringified name:
-         - `{:cart, CartReducer}` → name = `:cart`, prefix = `"cart"`
+      2. **{name, Module} tuple** - Custom name, action_prefix defaults to stringified name:
+         - `{:cart, CartReducer}` → name = `:cart`, action_prefix = `"cart"`
 
-      3. **{name, Module, prefix} tuple** - Explicit name and prefix:
-         - `{:shipping, ShippingReducer, "ship"}` → name = `:shipping`, prefix = `"ship"`
+      3. **{name, Module, action_prefix} tuple** - Explicit name and action_prefix:
+         - `{:shipping, ShippingReducer, "ship"}` → name = `:shipping`, action_prefix = `"ship"`
 
       ## State Slicing
 
@@ -1138,11 +1164,11 @@ defmodule Phoenix.SessionProcess do
 
       ## Action Routing
 
-      Actions are routed to reducers based on their `@prefix` attribute:
+      Actions are routed to reducers based on their `@action_prefix` attribute:
 
-      - `"user.reload"` → Routes to reducer with prefix `"user"`
-      - `"cart.add"` → Routes to reducer with prefix `"cart"`
-      - `"ship.calculate"` → Routes to reducer with prefix `"ship"`
+      - `"user.reload"` → Routes to reducer with action_prefix `"user"`
+      - `"cart.add"` → Routes to reducer with action_prefix `"cart"`
+      - `"ship.calculate"` → Routes to reducer with action_prefix `"ship"`
 
       You can also explicitly target reducers in dispatch:
 
@@ -1320,11 +1346,11 @@ defmodule Phoenix.SessionProcess do
 
       defp build_combined_reducers(combined) when is_list(combined) do
         Enum.reduce(combined, %{}, fn
-          # Format 1: Module - use module's @name and @prefix
+          # Format 1: Module - use module's @name and @action_prefix
           module, acc when is_atom(module) ->
             validate_reducer_module!(module)
             name = module.__reducer_name__()
-            prefix = module.__reducer_prefix__()
+            action_prefix = module.__reducer_action_prefix__()
 
             if Map.has_key?(acc, name) do
               raise ArgumentError, """
@@ -1337,12 +1363,12 @@ defmodule Phoenix.SessionProcess do
               """
             end
 
-            Map.put(acc, name, {:combined, module, name, prefix})
+            Map.put(acc, name, {:combined, module, name, action_prefix})
 
-          # Format 2: {name, Module} - use name, prefix = stringified name
+          # Format 2: {name, Module} - use name, action_prefix = stringified name
           {name, module}, acc when is_atom(name) and is_atom(module) ->
             validate_reducer_module!(module)
-            prefix = to_string(name)
+            action_prefix = to_string(name)
 
             if Map.has_key?(acc, name) do
               raise ArgumentError, """
@@ -1355,10 +1381,11 @@ defmodule Phoenix.SessionProcess do
               """
             end
 
-            Map.put(acc, name, {:combined, module, name, prefix})
+            Map.put(acc, name, {:combined, module, name, action_prefix})
 
-          # Format 3: {name, Module, prefix} - explicit name and prefix
-          {name, module, prefix}, acc when is_atom(name) and is_atom(module) and is_binary(prefix) ->
+          # Format 3: {name, Module, action_prefix} - explicit name and action_prefix
+          {name, module, action_prefix}, acc
+          when is_atom(name) and is_atom(module) and (is_binary(action_prefix) or is_nil(action_prefix)) ->
             validate_reducer_module!(module)
 
             if Map.has_key?(acc, name) do
@@ -1372,7 +1399,7 @@ defmodule Phoenix.SessionProcess do
               """
             end
 
-            Map.put(acc, name, {:combined, module, name, prefix})
+            Map.put(acc, name, {:combined, module, name, action_prefix})
 
           # Invalid format - catch-all with helpful error
           invalid, _acc ->
@@ -1380,16 +1407,17 @@ defmodule Phoenix.SessionProcess do
             Invalid combined_reducers entry: #{inspect(invalid)}
 
             Expected one of:
-              - Module (atom) - uses module's @name and @prefix
-              - {name, Module} (2-tuple) - custom name, prefix defaults to name
-              - {name, Module, prefix} (3-tuple) - custom name and prefix
+              - Module (atom) - uses module's @name and @action_prefix
+              - {name, Module} (2-tuple) - custom name, action_prefix defaults to name
+              - {name, Module, action_prefix} (3-tuple) - custom name and action_prefix (can be nil)
 
             Example:
                 def combined_reducers do
                   [
-                    UserReducer,                    # Uses @name and @prefix from module
-                    {:cart, CartReducer},           # Name: :cart, prefix: "cart"
-                    {:shipping, ShipReducer, "ship"} # Name: :shipping, prefix: "ship"
+                    UserReducer,                     # Uses @name and @action_prefix from module
+                    {:cart, CartReducer},            # Name: :cart, action_prefix: "cart"
+                    {:shipping, ShipReducer, "ship"}, # Name: :shipping, action_prefix: "ship"
+                    {:global, GlobalReducer, nil}    # Name: :global, no action_prefix (handles all)
                   ]
                 end
 
@@ -1401,9 +1429,9 @@ defmodule Phoenix.SessionProcess do
       # Handle old map format for backward compatibility
       defp build_combined_reducers(combined) when is_map(combined) do
         Enum.into(combined, %{}, fn {slice_key, module} ->
-          # For maps, use slice_key as both name and prefix
-          prefix = to_string(slice_key)
-          {slice_key, {:combined, module, slice_key, prefix}}
+          # For maps, use slice_key as both name and action_prefix
+          action_prefix = to_string(slice_key)
+          {slice_key, {:combined, module, slice_key, action_prefix}}
         end)
       end
 
@@ -1435,7 +1463,7 @@ defmodule Phoenix.SessionProcess do
                 use Phoenix.SessionProcess, :reducer
 
                 @name :my_reducer
-                @prefix "my"  # Optional, defaults to @name
+                @action_prefix "my"  # Optional, defaults to @name (can be nil or "" for catch-all)
 
                 def init_state, do: %{}
 
@@ -1598,15 +1626,16 @@ defmodule Phoenix.SessionProcess do
             # No prefix routing, use all reducers
             all_reducers
 
-          prefix when is_binary(prefix) ->
-            # Filter reducers with matching prefix
+          prefix when is_binary(prefix) and prefix != "" ->
+            # Filter reducers with matching action_prefix or nil/empty action_prefix (catch-all)
             Enum.filter(all_reducers, fn
-              {_name, {:combined, _module, _slice_key, reducer_prefix}} ->
-                # Combined reducer - match against its prefix
-                reducer_prefix == prefix
+              {_name, {:combined, _module, _slice_key, reducer_action_prefix}} ->
+                # Match if action_prefix matches, or if reducer has no action_prefix (nil or "")
+                reducer_action_prefix == prefix or reducer_action_prefix == nil or
+                  reducer_action_prefix == ""
 
               {_name, _reducer_fn} ->
-                # Manual reducers have no prefix, always included in any routing
+                # Manual reducers have no action_prefix, always included
                 true
             end)
         end

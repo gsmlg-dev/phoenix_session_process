@@ -46,32 +46,45 @@ defmodule Phoenix.SessionProcess.DispatchTest do
   end
 
   describe "dispatch/3" do
-    test "synchronous dispatch returns new state", %{session_id: session_id} do
-      {:ok, new_state} = SessionProcess.dispatch(session_id, :increment)
+    test "dispatch returns :ok", %{session_id: session_id} do
+      result = SessionProcess.dispatch(session_id, :increment)
+      assert result == :ok
 
-      assert new_state.count == 1
-      assert new_state.user == nil
+      # Verify state changed
+      state = SessionProcess.get_state(session_id)
+      assert state.count == 1
+      assert state.user == nil
     end
 
     test "multiple dispatches accumulate state changes", %{session_id: session_id} do
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
-      {:ok, state} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
 
+      # Wait a bit for async processing
+      Process.sleep(10)
+
+      state = SessionProcess.get_state(session_id)
       assert state.count == 3
     end
 
     test "dispatch with different actions", %{session_id: session_id} do
-      {:ok, state1} = SessionProcess.dispatch(session_id, {:set_count, 10})
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 10})
+      Process.sleep(10)
+
+      state1 = SessionProcess.get_state(session_id)
       assert state1.count == 10
 
-      {:ok, state2} = SessionProcess.dispatch(session_id, {:set_user, "alice"})
+      :ok = SessionProcess.dispatch(session_id, {:set_user, "alice"})
+      Process.sleep(10)
+
+      state2 = SessionProcess.get_state(session_id)
       assert state2.user == "alice"
       assert state2.count == 10
     end
 
-    test "asynchronous dispatch returns :ok", %{session_id: session_id} do
-      result = SessionProcess.dispatch(session_id, :increment, async: true)
+    test "dispatch_async returns :ok", %{session_id: session_id} do
+      result = SessionProcess.dispatch_async(session_id, :increment)
       assert result == :ok
 
       # Wait a bit for async processing
@@ -82,8 +95,11 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert state.count == 1
     end
 
-    test "dispatch with custom timeout", %{session_id: session_id} do
-      {:ok, state} = SessionProcess.dispatch(session_id, :increment, timeout: 10_000)
+    test "dispatch with timeout option (ignored)", %{session_id: session_id} do
+      :ok = SessionProcess.dispatch(session_id, :increment, timeout: 10_000)
+      Process.sleep(10)
+
+      state = SessionProcess.get_state(session_id)
       assert state.count == 1
     end
 
@@ -92,15 +108,16 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert {:error, {:session_not_found, "nonexistent_session"}} == result
     end
 
-    test "async dispatch to non-existent session returns error", %{} do
-      result = SessionProcess.dispatch("nonexistent_session", :increment, async: true)
+    test "dispatch_async to non-existent session returns error", %{} do
+      result = SessionProcess.dispatch_async("nonexistent_session", :increment)
       assert {:error, {:session_not_found, "nonexistent_session"}} == result
     end
   end
 
   describe "get_state/2" do
     test "gets full state without selector", %{session_id: session_id} do
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
+      Process.sleep(10)
 
       state = SessionProcess.get_state(session_id)
       assert state.count == 1
@@ -108,7 +125,8 @@ defmodule Phoenix.SessionProcess.DispatchTest do
     end
 
     test "gets state with inline selector function", %{session_id: session_id} do
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_count, 42})
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 42})
+      Process.sleep(10)
 
       count = SessionProcess.get_state(session_id, fn s -> s.count end)
       assert count == 42
@@ -118,7 +136,8 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       # Register a named selector
       :ok = SessionProcess.register_selector(session_id, :count, fn s -> s.count end)
 
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_count, 99})
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 99})
+      Process.sleep(10)
 
       count = SessionProcess.get_state(session_id, :count)
       assert count == 99
@@ -135,7 +154,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert_receive {:count_changed, 0}, 1000
 
       # Dispatch action
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
 
       # Receive update
       assert_receive {:count_changed, 1}, 1000
@@ -153,13 +172,13 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert_receive {:count_changed, 0}, 1000
 
       # Change user (not count)
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_user, "bob"})
+      :ok = SessionProcess.dispatch(session_id, {:set_user, "bob"})
 
       # Should NOT receive notification
       refute_receive {:count_changed, _}, 100
 
       # Now change count
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
 
       # Should receive notification
       assert_receive {:count_changed, 1}, 1000
@@ -180,7 +199,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert_receive {:count_changed_2, 0}, 1000
 
       # Dispatch
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
 
       # Both should receive
       assert_receive {:count_changed_1, 1}, 1000
@@ -200,7 +219,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       :ok = SessionProcess.unsubscribe(session_id, sub_id)
 
       # Dispatch
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
 
       # Should NOT receive
       refute_receive {:count_changed, _}, 100
@@ -231,7 +250,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       Process.sleep(50)
 
       # Dispatch should not crash
-      {:ok, _} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
     end
   end
 
@@ -240,7 +259,8 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       # Register selector
       :ok = SessionProcess.register_selector(session_id, :count, fn s -> s.count end)
 
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_count, 123})
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 123})
+      Process.sleep(10)
 
       # Use select function
       count = SessionProcess.select(session_id, :count)
@@ -252,7 +272,8 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       :ok =
         SessionProcess.register_selector(session_id, :doubled_count, fn s -> s.count * 2 end)
 
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_count, 5})
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 5})
+      Process.sleep(10)
 
       doubled = SessionProcess.select(session_id, :doubled_count)
       assert doubled == 10
@@ -282,11 +303,15 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       :ok = SessionProcess.register_reducer(session_id, :multiplier, multiplier_reducer)
 
       # First reducer increments
-      {:ok, state1} = SessionProcess.dispatch(session_id, :increment)
+      :ok = SessionProcess.dispatch(session_id, :increment)
+      Process.sleep(10)
+      state1 = SessionProcess.get_state(session_id)
       assert state1.count == 1
 
       # Second reducer multiplies
-      {:ok, state2} = SessionProcess.dispatch(session_id, {:multiply_count, 5})
+      :ok = SessionProcess.dispatch(session_id, {:multiply_count, 5})
+      Process.sleep(10)
+      state2 = SessionProcess.get_state(session_id)
       assert state2.count == 5
     end
 
@@ -306,9 +331,11 @@ defmodule Phoenix.SessionProcess.DispatchTest do
 
       :ok = SessionProcess.register_reducer(session_id, :doubler, doubler)
 
-      {:ok, _} = SessionProcess.dispatch(session_id, {:set_count, 5})
-      {:ok, state} = SessionProcess.dispatch(session_id, :double)
+      :ok = SessionProcess.dispatch(session_id, {:set_count, 5})
+      :ok = SessionProcess.dispatch(session_id, :double)
+      Process.sleep(10)
 
+      state = SessionProcess.get_state(session_id)
       assert state.count == 10
     end
   end

@@ -32,6 +32,7 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
   - `__reducer_throttles__/0` - Returns list of `{action_pattern, duration}` tuples
   - `__reducer_debounces__/0` - Returns list of `{action_pattern, duration}` tuples
   - `__reducer_module__/0` - Returns `true` to mark as a reducer module
+  - `__reducer_action_prefix__/0` - Returns the action prefix for routing (can be nil)
   """
 
   @doc """
@@ -43,7 +44,7 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
     throttles = Module.get_attribute(env.module, :action_throttles) || []
     debounces = Module.get_attribute(env.module, :action_debounces) || []
     name = Module.get_attribute(env.module, :name)
-    prefix = Module.get_attribute(env.module, :prefix)
+    action_prefix = Module.get_attribute(env.module, :action_prefix)
 
     # Reverse to maintain declaration order
     throttles = Enum.reverse(throttles)
@@ -62,7 +63,7 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
               use Phoenix.SessionProcess, :reducer
 
               @name :my_reducer
-              @prefix "my"  # Optional, defaults to @name
+              @action_prefix "my"  # Optional, defaults to @name, can be nil or "" for no prefix
 
               def handle_action(%Action{type: "my.action"}, state) do
                 # ...
@@ -71,8 +72,18 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
         """
     end
 
-    # Default prefix to name (convert atom to string)
-    prefix = prefix || to_string(name)
+    # Default action_prefix to name (convert atom to string), unless explicitly set
+    # action_prefix can be nil or "" to indicate no prefix
+    action_prefix =
+      cond do
+        action_prefix == nil and Module.get_attribute(env.module, :action_prefix, :__not_set__) == :__not_set__ ->
+          # @action_prefix not set at all, default to stringified name
+          to_string(name)
+
+        true ->
+          # @action_prefix was explicitly set (could be nil, "", or a string)
+          action_prefix
+      end
 
     quote do
       @doc """
@@ -83,18 +94,22 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
       def __reducer_name__, do: unquote(name)
 
       @doc """
-      Returns the reducer's prefix.
+      Returns the reducer's action prefix.
 
       Actions with type starting with this prefix will be routed to this reducer.
+      Can be nil or empty string to indicate no prefix routing.
 
       ## Examples
 
-          # With @prefix "user"
+          # With @action_prefix "user"
           "user.reload" -> matches
           "user.login" -> matches
           "cart.add" -> no match
+
+          # With @action_prefix nil or ""
+          All actions without explicit routing are eligible
       """
-      def __reducer_prefix__, do: unquote(prefix)
+      def __reducer_action_prefix__, do: unquote(action_prefix)
 
       @doc """
       Returns the list of throttle configurations for this reducer.
