@@ -40,6 +40,7 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
 
   Generates metadata functions based on accumulated module attributes.
   """
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defmacro __before_compile__(env) do
     throttles = Module.get_attribute(env.module, :action_throttles) || []
     debounces = Module.get_attribute(env.module, :action_debounces) || []
@@ -75,15 +76,13 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
     # Default action_prefix to name (convert atom to string), unless explicitly set
     # action_prefix can be nil or "" to indicate no prefix
     action_prefix =
-      cond do
-        action_prefix == nil and
-            Module.get_attribute(env.module, :action_prefix, :__not_set__) == :__not_set__ ->
-          # @action_prefix not set at all, default to stringified name
-          to_string(name)
-
-        true ->
-          # @action_prefix was explicitly set (could be nil, "", or a string)
-          action_prefix
+      if action_prefix == nil and
+           Module.get_attribute(env.module, :action_prefix, :__not_set__) == :__not_set__ do
+        # @action_prefix not set at all, default to stringified name
+        to_string(name)
+      else
+        # @action_prefix was explicitly set (could be nil, "", or a string)
+        action_prefix
       end
 
     quote do

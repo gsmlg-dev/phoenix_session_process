@@ -1006,6 +1006,7 @@ defmodule Phoenix.SessionProcess do
   defmacro __using__(:process) do
     quote do
       use GenServer
+      alias Phoenix.SessionProcess.Redux.Action
 
       # ========================================================================
       # GenServer Boilerplate
@@ -1470,6 +1471,7 @@ defmodule Phoenix.SessionProcess do
         Map.put(state, slice_key, slice_initial_state)
       end
 
+      # credo:disable-for-lines:60 Credo.Check.Refactor.Nesting
       defp apply_combined_reducer(module, action, slice_key, app_state, internal_state) do
         alias Phoenix.SessionProcess.Redux.ActionRateLimiter
 
@@ -1515,9 +1517,9 @@ defmodule Phoenix.SessionProcess do
         end
       end
 
-      defp async_action?(%Phoenix.SessionProcess.Redux.Action{} = action) do
+      defp async_action?(%Action{} = action) do
         # Check if action has async metadata flag
-        Phoenix.SessionProcess.Redux.Action.async?(action)
+        Action.async?(action)
       end
 
       defp async_action?(%{type: type}) when is_binary(type),
@@ -1626,7 +1628,7 @@ defmodule Phoenix.SessionProcess do
       end
 
       # Infer prefix from action type (e.g., "user.reload" -> "user")
-      defp infer_prefix_from_action(%Phoenix.SessionProcess.Redux.Action{type: type})
+      defp infer_prefix_from_action(%Action{type: type})
            when is_binary(type) do
         case String.split(type, ".", parts: 2) do
           [prefix, _action] -> prefix
@@ -1692,17 +1694,19 @@ defmodule Phoenix.SessionProcess do
 
   @doc false
   def __on_reducer_definition__(env, _kind, _name, _args, _guards, _body) do
+    alias Phoenix.SessionProcess.Redux.ReducerCompiler
+
     module = env.module
 
     # Check for @throttle attribute
     if throttle = Module.get_attribute(module, :throttle) do
-      Phoenix.SessionProcess.Redux.ReducerCompiler.register_throttle(module, throttle)
+      ReducerCompiler.register_throttle(module, throttle)
       Module.delete_attribute(module, :throttle)
     end
 
     # Check for @debounce attribute
     if debounce = Module.get_attribute(module, :debounce) do
-      Phoenix.SessionProcess.Redux.ReducerCompiler.register_debounce(module, debounce)
+      ReducerCompiler.register_debounce(module, debounce)
       Module.delete_attribute(module, :debounce)
     end
   end
