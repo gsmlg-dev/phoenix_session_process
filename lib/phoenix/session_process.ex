@@ -586,8 +586,13 @@ defmodule Phoenix.SessionProcess do
   """
   @spec dispatch(binary(), any(), keyword()) :: {:ok, map()} | :ok | {:error, term()}
   def dispatch(session_id, action, opts \\ []) do
+    alias Phoenix.SessionProcess.Redux.Action
+
     async = Keyword.get(opts, :async, false)
     timeout = Keyword.get(opts, :timeout, 5000)
+
+    # Normalize action with all opts (including routing metadata)
+    normalized_action = Action.normalize(action, opts)
 
     if async do
       case ProcessSupervisor.session_process_pid(session_id) do
@@ -595,11 +600,11 @@ defmodule Phoenix.SessionProcess do
           {:error, {:session_not_found, session_id}}
 
         _pid ->
-          cast(session_id, {:dispatch_action, action})
+          cast(session_id, {:dispatch_action, normalized_action})
           :ok
       end
     else
-      call(session_id, {:dispatch_action, action}, timeout)
+      call(session_id, {:dispatch_action, normalized_action}, timeout)
     end
   end
 
@@ -873,6 +878,10 @@ defmodule Phoenix.SessionProcess do
     quote do
       @before_compile Phoenix.SessionProcess.Redux.ReducerCompiler
 
+      # Reducer identity
+      Module.register_attribute(__MODULE__, :name, accumulate: false)
+      Module.register_attribute(__MODULE__, :prefix, accumulate: false)
+
       # Accumulators for all throttle/debounce configs
       Module.register_attribute(__MODULE__, :action_throttles, accumulate: true)
       Module.register_attribute(__MODULE__, :action_debounces, accumulate: true)
@@ -1033,24 +1042,20 @@ defmodule Phoenix.SessionProcess do
           if function_exported?(__MODULE__, :combined_reducers, 0) do
             combined_reducers()
           else
-            %{}
+            []
           end
 
-        # Initialize state slices from each reducer's init_state
-        app_state =
-          Enum.reduce(combined, user_state, fn {slice_key, module}, acc_state ->
-            slice_initial_state =
-              if function_exported?(module, :init_state, 0) do
-                module.init_state()
-              else
-                %{}
-              end
-
-            Map.put(acc_state, slice_key, slice_initial_state)
-          end)
-
-        # Build reducer map from combined_reducers
+        # Build reducer map from combined_reducers (validates entries)
         redux_reducers = build_combined_reducers(combined)
+
+        # Initialize state slices from each reducer's init_state
+        # Use the validated redux_reducers map
+        app_state =
+          Enum.reduce(redux_reducers, user_state, fn {slice_key,
+                                                      {:combined, module, _name, _prefix}},
+                                                     acc ->
+            init_reducer_slice(slice_key, module, acc)
+          end)
 
         # Wrap in Redux infrastructure
         state = %{
@@ -1059,7 +1064,7 @@ defmodule Phoenix.SessionProcess do
 
           # Redux infrastructure (internal, prefixed with _redux_)
           _redux_reducers: redux_reducers,
-          _redux_reducer_slices: Map.keys(combined),
+          _redux_reducer_slices: Map.keys(redux_reducers),
           _redux_selectors: %{},
           _redux_subscriptions: [],
           _redux_middleware: [],
@@ -1097,29 +1102,53 @@ defmodule Phoenix.SessionProcess do
       @doc """
       Define combined reducers for state slicing.
 
-      Override this callback to return a map of state slice names to reducer modules.
+      Override this callback to return a list of reducer modules or tuples.
       Each reducer module manages its own portion of the state.
 
       ## Examples
 
           def combined_reducers() do
-            %{
-              users: MyApp.Reducers.UserReducer,
-              cart: MyApp.Reducers.CartReducer,
-              notifications: MyApp.Reducers.NotificationReducer
-            }
+            [
+              MyApp.Reducers.UserReducer,           # Uses module's @name and @prefix
+              {:cart, MyApp.Reducers.CartReducer},  # Custom name, prefix = "cart"
+              {:shipping, MyApp.Reducers.ShippingReducer, "ship"}  # Custom name and prefix
+            ]
           end
+
+      ## List Formats
+
+      The list can contain three formats:
+
+      1. **Module atom** - Uses the reducer's `@name` and `@prefix` attributes:
+         - `UserReducer` → name from `@name`, prefix from `@prefix` or `@name`
+
+      2. **{name, Module} tuple** - Custom name, prefix defaults to stringified name:
+         - `{:cart, CartReducer}` → name = `:cart`, prefix = `"cart"`
+
+      3. **{name, Module, prefix} tuple** - Explicit name and prefix:
+         - `{:shipping, ShippingReducer, "ship"}` → name = `:shipping`, prefix = `"ship"`
 
       ## State Slicing
 
-      If you define combined_reducers, actions will be routed to the appropriate
-      reducer based on the state slice. Each reducer receives only its slice of state:
+      Each reducer receives only its slice of state based on the name:
 
-      - UserReducer receives `state.users`
-      - CartReducer receives `state.cart`
-      - NotificationReducer receives `state.notifications`
+      - UserReducer receives `state.users` (if @name is :users)
+      - CartReducer receives `state.cart` (from {:cart, CartReducer})
+      - ShippingReducer receives `state.shipping` (from {:shipping, ...})
+
+      ## Action Routing
+
+      Actions are routed to reducers based on their `@prefix` attribute:
+
+      - `"user.reload"` → Routes to reducer with prefix `"user"`
+      - `"cart.add"` → Routes to reducer with prefix `"cart"`
+      - `"ship.calculate"` → Routes to reducer with prefix `"ship"`
+
+      You can also explicitly target reducers in dispatch:
+
+          dispatch(session_id, "reload", reducers: [:user, :cart])
       """
-      def combined_reducers, do: %{}
+      def combined_reducers, do: []
 
       @doc deprecated: "Use init_state/1 instead"
       @doc """
@@ -1252,10 +1281,11 @@ defmodule Phoenix.SessionProcess do
 
       @impl true
       def handle_info({:debounced_action, module, action}, state) do
-        # Process the debounced action
+        # Process the debounced action - find the slice_key for this module
         slice_key =
-          Enum.find(state._redux_reducer_slices, fn key ->
-            Map.get(state._redux_reducers, key) != nil
+          Enum.find_value(state._redux_reducers, fn
+            {key, {:combined, ^module, _, _}} -> key
+            _ -> nil
           end)
 
         if slice_key do
@@ -1288,11 +1318,144 @@ defmodule Phoenix.SessionProcess do
       # Private Helpers
       # ========================================================================
 
-      defp build_combined_reducers(combined) do
-        Enum.into(combined, %{}, fn {slice_key, module} ->
-          # Store metadata tuple instead of wrapper function
-          {slice_key, {:combined, module, slice_key}}
+      defp build_combined_reducers(combined) when is_list(combined) do
+        Enum.reduce(combined, %{}, fn
+          # Format 1: Module - use module's @name and @prefix
+          module, acc when is_atom(module) ->
+            validate_reducer_module!(module)
+            name = module.__reducer_name__()
+            prefix = module.__reducer_prefix__()
+
+            if Map.has_key?(acc, name) do
+              raise ArgumentError, """
+              Duplicate reducer name: #{inspect(name)}
+
+              Reducer names must be unique in combined_reducers/0.
+              Found duplicate for name #{inspect(name)}.
+
+              Check your combined_reducers/0 list and ensure each reducer has a unique @name.
+              """
+            end
+
+            Map.put(acc, name, {:combined, module, name, prefix})
+
+          # Format 2: {name, Module} - use name, prefix = stringified name
+          {name, module}, acc when is_atom(name) and is_atom(module) ->
+            validate_reducer_module!(module)
+            prefix = to_string(name)
+
+            if Map.has_key?(acc, name) do
+              raise ArgumentError, """
+              Duplicate reducer name: #{inspect(name)}
+
+              Reducer names must be unique in combined_reducers/0.
+              Found duplicate for name #{inspect(name)}.
+
+              Check your combined_reducers/0 list and ensure each name is unique.
+              """
+            end
+
+            Map.put(acc, name, {:combined, module, name, prefix})
+
+          # Format 3: {name, Module, prefix} - explicit name and prefix
+          {name, module, prefix}, acc when is_atom(name) and is_atom(module) and is_binary(prefix) ->
+            validate_reducer_module!(module)
+
+            if Map.has_key?(acc, name) do
+              raise ArgumentError, """
+              Duplicate reducer name: #{inspect(name)}
+
+              Reducer names must be unique in combined_reducers/0.
+              Found duplicate for name #{inspect(name)}.
+
+              Check your combined_reducers/0 list and ensure each name is unique.
+              """
+            end
+
+            Map.put(acc, name, {:combined, module, name, prefix})
+
+          # Invalid format - catch-all with helpful error
+          invalid, _acc ->
+            raise ArgumentError, """
+            Invalid combined_reducers entry: #{inspect(invalid)}
+
+            Expected one of:
+              - Module (atom) - uses module's @name and @prefix
+              - {name, Module} (2-tuple) - custom name, prefix defaults to name
+              - {name, Module, prefix} (3-tuple) - custom name and prefix
+
+            Example:
+                def combined_reducers do
+                  [
+                    UserReducer,                    # Uses @name and @prefix from module
+                    {:cart, CartReducer},           # Name: :cart, prefix: "cart"
+                    {:shipping, ShipReducer, "ship"} # Name: :shipping, prefix: "ship"
+                  ]
+                end
+
+            Got: #{inspect(invalid)}
+            """
         end)
+      end
+
+      # Handle old map format for backward compatibility
+      defp build_combined_reducers(combined) when is_map(combined) do
+        Enum.into(combined, %{}, fn {slice_key, module} ->
+          # For maps, use slice_key as both name and prefix
+          prefix = to_string(slice_key)
+          {slice_key, {:combined, module, slice_key, prefix}}
+        end)
+      end
+
+      defp validate_reducer_module!(module) do
+        case Code.ensure_loaded(module) do
+          {:module, _} ->
+            :ok
+
+          {:error, _reason} ->
+            raise ArgumentError, """
+            Could not load reducer module: #{inspect(module)}
+
+            Make sure the module is compiled and available.
+            """
+        end
+
+        unless function_exported?(module, :__reducer_name__, 0) do
+          raise ArgumentError, """
+          Module #{inspect(module)} is not a reducer module.
+
+          Reducer modules must use the :reducer macro and define @name.
+
+          Did you forget to add:
+              use Phoenix.SessionProcess, :reducer
+              @name :reducer_name
+
+          Example:
+              defmodule MyReducer do
+                use Phoenix.SessionProcess, :reducer
+
+                @name :my_reducer
+                @prefix "my"  # Optional, defaults to @name
+
+                def init_state, do: %{}
+
+                def handle_action(action, state) do
+                  # ...
+                end
+              end
+          """
+        end
+      end
+
+      defp init_reducer_slice(slice_key, module, state) do
+        slice_initial_state =
+          if function_exported?(module, :init_state, 0) do
+            module.init_state()
+          else
+            %{}
+          end
+
+        Map.put(state, slice_key, slice_initial_state)
       end
 
       defp apply_combined_reducer(module, action, slice_key, app_state, internal_state) do
@@ -1340,23 +1503,36 @@ defmodule Phoenix.SessionProcess do
         end
       end
 
+      defp async_action?(%Phoenix.SessionProcess.Redux.Action{} = action) do
+        # Check if action has async metadata flag
+        Phoenix.SessionProcess.Redux.Action.async?(action)
+      end
+
       defp async_action?(%{type: type}) when is_binary(type),
         do: String.ends_with?(type, "_async")
 
       defp async_action?(_), do: false
 
       defp dispatch_with_reducers(action, state) do
+        alias Phoenix.SessionProcess.Redux.Action
+
+        # Normalize action to Action struct for consistent routing and pattern matching
+        normalized_action = Action.normalize(action, [])
+
         old_app_state = state.app_state
 
-        # Apply all registered reducers
+        # Determine which reducers should handle this action based on routing metadata
+        reducers_to_apply = filter_reducers_for_action(normalized_action, state._redux_reducers)
+
+        # Apply filtered reducers
         {new_app_state, new_internal_state} =
-          Enum.reduce(state._redux_reducers, {old_app_state, state}, fn
-            # Combined reducer (from combined_reducers/0)
-            {_name, {:combined, module, slice_key}}, {acc_app_state, acc_internal_state} ->
+          Enum.reduce(reducers_to_apply, {old_app_state, state}, fn
+            # Combined reducer (from combined_reducers/0) - new format with prefix
+            {_name, {:combined, module, slice_key, _prefix}}, {acc_app_state, acc_internal_state} ->
               {updated_app_state, updated_internal_state} =
                 apply_combined_reducer(
                   module,
-                  action,
+                  normalized_action,
                   slice_key,
                   acc_app_state,
                   acc_internal_state
@@ -1366,7 +1542,7 @@ defmodule Phoenix.SessionProcess do
 
             # Manual reducer (from register_reducer/3)
             {_name, reducer_fn}, {acc_app_state, acc_internal_state} when is_function(reducer_fn) ->
-              new_acc_app_state = reducer_fn.(action, acc_app_state)
+              new_acc_app_state = reducer_fn.(normalized_action, acc_app_state)
               {new_acc_app_state, acc_internal_state}
           end)
 
@@ -1387,6 +1563,65 @@ defmodule Phoenix.SessionProcess do
 
         updated_internal_state
       end
+
+      # Filter reducers based on action routing metadata
+      defp filter_reducers_for_action(action, all_reducers) do
+        alias Phoenix.SessionProcess.Redux.Action
+
+        # Check explicit reducer targeting (highest priority)
+        case Action.target_reducers(action) do
+          nil ->
+            # No explicit targets, check for prefix routing
+            filter_by_prefix(action, all_reducers)
+
+          target_list when is_list(target_list) ->
+            # Explicit list of reducer names to target
+            Enum.filter(all_reducers, fn {name, _} -> name in target_list end)
+        end
+      end
+
+      # Filter reducers by prefix (explicit or inferred from action type)
+      defp filter_by_prefix(action, all_reducers) do
+        alias Phoenix.SessionProcess.Redux.Action
+
+        # Check for explicit prefix filter in action metadata
+        prefix_filter = Action.reducer_prefix(action)
+
+        # Infer prefix from action type if it's a string with dot notation
+        inferred_prefix = infer_prefix_from_action(action)
+
+        # Use explicit prefix filter, or inferred prefix, or nil (all reducers)
+        prefix_to_match = prefix_filter || inferred_prefix
+
+        case prefix_to_match do
+          nil ->
+            # No prefix routing, use all reducers
+            all_reducers
+
+          prefix when is_binary(prefix) ->
+            # Filter reducers with matching prefix
+            Enum.filter(all_reducers, fn
+              {_name, {:combined, _module, _slice_key, reducer_prefix}} ->
+                # Combined reducer - match against its prefix
+                reducer_prefix == prefix
+
+              {_name, _reducer_fn} ->
+                # Manual reducers have no prefix, always included in any routing
+                true
+            end)
+        end
+      end
+
+      # Infer prefix from action type (e.g., "user.reload" -> "user")
+      defp infer_prefix_from_action(%Phoenix.SessionProcess.Redux.Action{type: type})
+           when is_binary(type) do
+        case String.split(type, ".", parts: 2) do
+          [prefix, _action] -> prefix
+          [_] -> nil
+        end
+      end
+
+      defp infer_prefix_from_action(_), do: nil
 
       defp notify_all_subscriptions(new_state, subscriptions) do
         Enum.map(subscriptions, fn sub ->

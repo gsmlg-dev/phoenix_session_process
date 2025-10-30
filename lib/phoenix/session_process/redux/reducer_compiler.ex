@@ -42,12 +42,60 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
   defmacro __before_compile__(env) do
     throttles = Module.get_attribute(env.module, :action_throttles) || []
     debounces = Module.get_attribute(env.module, :action_debounces) || []
+    name = Module.get_attribute(env.module, :name)
+    prefix = Module.get_attribute(env.module, :prefix)
 
     # Reverse to maintain declaration order
     throttles = Enum.reverse(throttles)
     debounces = Enum.reverse(debounces)
 
+    # Validate name is set
+    unless name do
+      raise CompileError,
+        file: env.file,
+        line: env.line,
+        description: """
+        Reducer module #{inspect(env.module)} must define @name attribute.
+
+        Example:
+            defmodule MyReducer do
+              use Phoenix.SessionProcess, :reducer
+
+              @name :my_reducer
+              @prefix "my"  # Optional, defaults to @name
+
+              def handle_action(%Action{type: "my.action"}, state) do
+                # ...
+              end
+            end
+        """
+    end
+
+    # Default prefix to name (convert atom to string)
+    prefix = prefix || to_string(name)
+
     quote do
+      @doc """
+      Returns the reducer's name.
+
+      This is used to identify the reducer when routing actions.
+      """
+      def __reducer_name__, do: unquote(name)
+
+      @doc """
+      Returns the reducer's prefix.
+
+      Actions with type starting with this prefix will be routed to this reducer.
+
+      ## Examples
+
+          # With @prefix "user"
+          "user.reload" -> matches
+          "user.login" -> matches
+          "cart.add" -> no match
+      """
+      def __reducer_prefix__, do: unquote(prefix)
+
       @doc """
       Returns the list of throttle configurations for this reducer.
 

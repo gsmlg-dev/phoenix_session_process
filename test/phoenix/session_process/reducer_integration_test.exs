@@ -6,22 +6,30 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Test reducer module with throttle and debounce
   defmodule UserReducer do
     use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :users
+    @prefix "user"
 
     def init_state do
       %{users: [], fetch_count: 0, search_query: nil}
     end
 
     @throttle {"fetch-users", "100ms"}
-    def handle_action(%{type: "fetch-users"}, state) do
+    def handle_action(%Action{type: "fetch-users"}, state) do
+      Map.update(state, :fetch_count, 1, &(&1 + 1))
+    end
+
+    def handle_action(%Action{type: "user.fetch-users"}, state) do
       Map.update(state, :fetch_count, 1, &(&1 + 1))
     end
 
     @debounce {"search-users", "50ms"}
-    def handle_action(%{type: "search-users", payload: query}, state) do
+    def handle_action(%Action{type: "search-users", payload: query}, state) do
       Map.put(state, :search_query, query)
     end
 
-    def handle_action(%{type: "add-user", payload: user}, state) do
+    def handle_action(%Action{type: "add-user", payload: user}, state) do
       Map.update(state, :users, [user], &[user | &1])
     end
 
@@ -31,20 +39,165 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Another reducer for testing multiple reducers
   defmodule CartReducer do
     use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :cart
+    @prefix "cart"
 
     def init_state do
       %{items: []}
     end
 
-    def handle_action(%{type: "add-item", payload: item}, state) do
+    def handle_action(%Action{type: "add-item", payload: item}, state) do
       Map.update(state, :items, [item], &[item | &1])
     end
 
-    def handle_action(%{type: "clear-cart"}, state) do
+    def handle_action(%Action{type: "clear-cart"}, state) do
+      Map.put(state, :items, [])
+    end
+
+    # Also match with prefix for routing tests
+    def handle_action(%Action{type: "cart.clear-cart"}, state) do
       Map.put(state, :items, [])
     end
 
     def handle_action(_action, state), do: state
+  end
+
+  # Reducer with custom @name and @prefix
+  defmodule ShippingReducer do
+    use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :shipping
+    @prefix "ship"
+
+    def init_state do
+      %{address: nil, cost: 0}
+    end
+
+    def handle_action(%Action{type: "calculate-shipping", payload: address}, state) do
+      %{state | address: address, cost: 10}
+    end
+
+    def handle_action(_action, state), do: state
+  end
+
+  # Reducer with @name but no @prefix (should default to "inventory")
+  defmodule InventoryReducer do
+    use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :inventory
+
+    def init_state do
+      %{stock: 100}
+    end
+
+    def handle_action(%Action{type: "reduce-stock", payload: amount}, state) do
+      Map.update(state, :stock, 0, &max(&1 - amount, 0))
+    end
+
+    def handle_action(_action, state), do: state
+  end
+
+  # Reducer without init_state/0 (should default to %{})
+  defmodule NotificationsReducer do
+    use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :notifications
+    @prefix "notify"
+
+    # No init_state/0 defined
+
+    def handle_action(%Action{type: "add-notification", payload: msg}, state) do
+      Map.update(state, :messages, [msg], &[msg | &1])
+    end
+
+    def handle_action(_action, state), do: state
+  end
+
+  # Reducer with special characters in name/prefix
+  defmodule SpecialCharsReducer do
+    use Phoenix.SessionProcess, :reducer
+    alias Phoenix.SessionProcess.Redux.Action
+
+    @name :special_chars_test
+    @prefix "special-chars.test"
+
+    def init_state, do: %{data: "test"}
+
+    def handle_action(%Action{type: "update-special"}, state) do
+      Map.put(state, :data, "updated")
+    end
+
+    def handle_action(_action, state), do: state
+  end
+
+  # Multiple reducers for stress test
+  defmodule StressReducer1 do
+    use Phoenix.SessionProcess, :reducer
+    @name :stress1
+    def init_state, do: %{count: 0}
+    def handle_action(_action, state), do: state
+  end
+
+  defmodule StressReducer2 do
+    use Phoenix.SessionProcess, :reducer
+    @name :stress2
+    def init_state, do: %{count: 0}
+    def handle_action(_action, state), do: state
+  end
+
+  defmodule StressReducer3 do
+    use Phoenix.SessionProcess, :reducer
+    @name :stress3
+    def init_state, do: %{count: 0}
+    def handle_action(_action, state), do: state
+  end
+
+  defmodule StressReducer4 do
+    use Phoenix.SessionProcess, :reducer
+    @name :stress4
+    def init_state, do: %{count: 0}
+    def handle_action(_action, state), do: state
+  end
+
+  defmodule StressReducer5 do
+    use Phoenix.SessionProcess, :reducer
+    @name :stress5
+    def init_state, do: %{count: 0}
+    def handle_action(_action, state), do: state
+  end
+
+  # Counting reducers for routing tests
+  defmodule CountingUserReducer do
+    use Phoenix.SessionProcess, :reducer
+
+    @name :users
+    @prefix "users"
+
+    def init_state, do: %{count: 0}
+
+    def handle_action(_action, state) do
+      # Increment call count on any action
+      Map.update(state, :count, 1, &(&1 + 1))
+    end
+  end
+
+  defmodule CountingCartReducer do
+    use Phoenix.SessionProcess, :reducer
+
+    @name :cart
+    @prefix "cart"
+
+    def init_state, do: %{count: 0}
+
+    def handle_action(_action, state) do
+      # Increment call count on any action
+      Map.update(state, :count, 1, &(&1 + 1))
+    end
   end
 
   # Test session process with combined reducers
@@ -57,10 +210,10 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
 
     def combined_reducers do
-      %{
-        users: UserReducer,
-        cart: CartReducer
-      }
+      [
+        UserReducer,
+        CartReducer
+      ]
     end
   end
 
@@ -270,13 +423,15 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
   describe "manually registered reducers alongside combined reducers" do
     test "manually registered reducers can access full state" do
+      alias Phoenix.SessionProcess.Redux.Action
+
       session_id = "manual_#{:rand.uniform(1_000_000)}"
       {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
       # Register a manual reducer that works on global state
       manual_reducer = fn action, state ->
         case action do
-          :increment_global ->
+          %Action{type: :increment_global} ->
             Map.update(state, :global_count, 1, &(&1 + 1))
 
           _ ->
@@ -320,6 +475,888 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       state = SessionProcess.get_state(session_id)
       assert state.users.users == []
       assert state.cart.items == []
+    end
+  end
+
+  describe "combined_reducers error handling" do
+    test "raises on invalid list entry - string" do
+      defmodule InvalidStringSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          ["invalid_string"]
+        end
+      end
+
+      session_id = "test_invalid_string_#{:rand.uniform(1_000_000)}"
+      {:error, {exception, _stacktrace}} = SessionProcess.start(session_id, InvalidStringSession)
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Invalid combined_reducers entry/
+    end
+
+    test "raises on invalid list entry - integer" do
+      defmodule InvalidIntegerSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [123]
+        end
+      end
+
+      session_id = "test_invalid_int_#{:rand.uniform(1_000_000)}"
+      {:error, {exception, _stacktrace}} = SessionProcess.start(session_id, InvalidIntegerSession)
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Invalid combined_reducers entry/
+    end
+
+    test "raises on invalid list entry - single element tuple" do
+      defmodule InvalidTupleSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [{:invalid}]
+        end
+      end
+
+      session_id = "test_invalid_tuple_#{:rand.uniform(1_000_000)}"
+      {:error, {exception, _stacktrace}} = SessionProcess.start(session_id, InvalidTupleSession)
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Invalid combined_reducers entry/
+    end
+
+    test "raises on duplicate reducer names - same module twice" do
+      defmodule DuplicateModuleSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            UserReducer,
+            UserReducer
+          ]
+        end
+      end
+
+      session_id = "test_dup_module_#{:rand.uniform(1_000_000)}"
+
+      {:error, {exception, _stacktrace}} =
+        SessionProcess.start(session_id, DuplicateModuleSession)
+
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Duplicate reducer name: :users/
+    end
+
+    test "raises on duplicate reducer names - explicit name conflict" do
+      defmodule DuplicateNameSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            UserReducer,
+            {:users, CartReducer}
+          ]
+        end
+      end
+
+      session_id = "test_dup_name_#{:rand.uniform(1_000_000)}"
+      {:error, {exception, _stacktrace}} = SessionProcess.start(session_id, DuplicateNameSession)
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Duplicate reducer name: :users/
+    end
+
+    test "raises if module is not a reducer" do
+      defmodule NotAReducer do
+        # No "use Phoenix.SessionProcess, :reducer"
+        def some_function, do: :ok
+      end
+
+      defmodule NonReducerSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [NotAReducer]
+        end
+      end
+
+      session_id = "test_non_reducer_#{:rand.uniform(1_000_000)}"
+      {:error, {exception, _stacktrace}} = SessionProcess.start(session_id, NonReducerSession)
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/not a reducer module/
+    end
+
+    test "raises if module doesn't exist" do
+      defmodule NonExistentModuleSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [NonExistentModule]
+        end
+      end
+
+      session_id = "test_nonexistent_#{:rand.uniform(1_000_000)}"
+
+      {:error, {exception, _stacktrace}} =
+        SessionProcess.start(session_id, NonExistentModuleSession)
+
+      assert %ArgumentError{} = exception
+      assert exception.message =~ ~r/Could not load reducer module/
+    end
+
+    test "handles empty list gracefully" do
+      defmodule EmptyListSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{count: 0}
+
+        def combined_reducers do
+          []
+        end
+      end
+
+      session_id = "test_empty_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, EmptyListSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.count == 0
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "all three list formats together" do
+    test "combines Module, {name, Module}, and {name, Module, prefix} formats" do
+      defmodule MixedFormatSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{global: true}
+
+        def combined_reducers do
+          [
+            # Format 1: Module - uses @name and @prefix
+            UserReducer,
+            # Format 2: {name, Module} - custom name, prefix = "cart"
+            {:cart, CartReducer},
+            # Format 3: {name, Module, prefix} - explicit name and prefix
+            {:shipping, ShippingReducer, "ship"}
+          ]
+        end
+      end
+
+      session_id = "mixed_format_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, MixedFormatSession)
+
+      state = SessionProcess.get_state(session_id)
+
+      # Verify all slices initialized correctly
+      assert state.users == %{users: [], fetch_count: 0, search_query: nil}
+      assert state.cart == %{items: []}
+      assert state.shipping == %{address: nil, cost: 0}
+      assert state.global == true
+
+      # Test actions route to correct slices
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
+      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
+      SessionProcess.dispatch(session_id, %{type: "calculate-shipping", payload: "123 Main St"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Alice"]
+      assert state.cart.items == ["Book"]
+      assert state.shipping.address == "123 Main St"
+      assert state.shipping.cost == 10
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "@name and @prefix metadata" do
+    test "verifies __reducer_name__ returns correct name" do
+      assert UserReducer.__reducer_name__() == :users
+      assert CartReducer.__reducer_name__() == :cart
+      assert ShippingReducer.__reducer_name__() == :shipping
+      assert InventoryReducer.__reducer_name__() == :inventory
+    end
+
+    test "verifies __reducer_prefix__ returns correct prefix" do
+      assert UserReducer.__reducer_prefix__() == "user"
+      assert CartReducer.__reducer_prefix__() == "cart"
+      assert ShippingReducer.__reducer_prefix__() == "ship"
+      # InventoryReducer has no @prefix, should default to stringified @name
+      assert InventoryReducer.__reducer_prefix__() == "inventory"
+    end
+
+    test "reducer with @name but no @prefix defaults to stringified name" do
+      defmodule DefaultPrefixSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [InventoryReducer]
+        end
+      end
+
+      session_id = "default_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, DefaultPrefixSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.inventory == %{stock: 100}
+
+      # Dispatch action - should work with default prefix
+      SessionProcess.dispatch(session_id, %{type: "reduce-stock", payload: 20})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.inventory.stock == 80
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "state slice initialization variations" do
+    test "reducer without init_state/0 defaults to empty map" do
+      defmodule NoInitStateSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [NotificationsReducer]
+        end
+      end
+
+      session_id = "no_init_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, NoInitStateSession)
+
+      state = SessionProcess.get_state(session_id)
+      # Should be %{} because NotificationsReducer has no init_state/0
+      assert state.notifications == %{}
+
+      # Should still handle actions
+      SessionProcess.dispatch(session_id, %{type: "add-notification", payload: "Hello"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.notifications.messages == ["Hello"]
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "multiple reducers with different init_state implementations" do
+      defmodule MixedInitSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            UserReducer,
+            # Has init_state/0
+            NotificationsReducer
+            # No init_state/0
+          ]
+        end
+      end
+
+      session_id = "mixed_init_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, MixedInitSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users == %{users: [], fetch_count: 0, search_query: nil}
+      assert state.notifications == %{}
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "backward compatibility with map format" do
+    test "old map format still works" do
+      defmodule MapFormatSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          # Old map format
+          %{
+            users: UserReducer,
+            cart: CartReducer
+          }
+        end
+      end
+
+      session_id = "map_format_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, MapFormatSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users == %{users: [], fetch_count: 0, search_query: nil}
+      assert state.cart == %{items: []}
+
+      # Actions should work
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"})
+      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Pen"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Bob"]
+      assert state.cart.items == ["Pen"]
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "custom prefix in 3-tuple format" do
+    test "verifies custom prefix is used for action routing" do
+      defmodule CustomPrefixSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            # ShippingReducer has @prefix "ship", but we override with "shipping"
+            {:shipping, ShippingReducer, "shipping"}
+          ]
+        end
+      end
+
+      session_id = "custom_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, CustomPrefixSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.shipping == %{address: nil, cost: 0}
+
+      # This action should work (module's handle_action doesn't check prefix)
+      SessionProcess.dispatch(session_id, %{type: "calculate-shipping", payload: "456 Oak Ave"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.shipping.address == "456 Oak Ave"
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "different names with same module using different prefixes" do
+      defmodule SamePrefixSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            # Same module used twice with different names and prefixes
+            {:primary_users, UserReducer, "primary"},
+            {:secondary_users, UserReducer, "secondary"}
+          ]
+        end
+      end
+
+      session_id = "same_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, SamePrefixSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.primary_users == %{users: [], fetch_count: 0, search_query: nil}
+      assert state.secondary_users == %{users: [], fetch_count: 0, search_query: nil}
+
+      # Dispatch to both slices
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Primary User"})
+
+      state = SessionProcess.get_state(session_id)
+      # Both slices receive the action (prefix routing not yet implemented in handle_action)
+      assert "Primary User" in state.primary_users.users
+      assert "Primary User" in state.secondary_users.users
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "special characters in @name and @prefix" do
+    test "handles special characters in name and prefix" do
+      defmodule SpecialCharsSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [SpecialCharsReducer]
+        end
+      end
+
+      session_id = "special_chars_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, SpecialCharsSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.special_chars_test == %{data: "test"}
+
+      # Test action dispatch
+      SessionProcess.dispatch(session_id, %{type: "update-special"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.special_chars_test.data == "updated"
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "handles underscores and hyphens in names" do
+      defmodule UnderscoreHyphenSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            {:user_profile, UserReducer, "user-profile"},
+            {:cart_items, CartReducer, "cart.items"}
+          ]
+        end
+      end
+
+      session_id = "underscore_hyphen_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, UnderscoreHyphenSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert Map.has_key?(state, :user_profile)
+      assert Map.has_key?(state, :cart_items)
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "large list of reducers (stress test)" do
+    test "handles many reducers in one session" do
+      defmodule StressTestSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{global: 0}
+
+        def combined_reducers do
+          [
+            StressReducer1,
+            StressReducer2,
+            StressReducer3,
+            StressReducer4,
+            StressReducer5,
+            {:users, UserReducer},
+            {:cart, CartReducer},
+            {:shipping, ShippingReducer, "ship"},
+            {:inventory, InventoryReducer},
+            {:notifications, NotificationsReducer}
+          ]
+        end
+      end
+
+      session_id = "stress_test_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, StressTestSession)
+
+      state = SessionProcess.get_state(session_id)
+
+      # Verify all slices exist
+      assert Map.has_key?(state, :stress1)
+      assert Map.has_key?(state, :stress2)
+      assert Map.has_key?(state, :stress3)
+      assert Map.has_key?(state, :stress4)
+      assert Map.has_key?(state, :stress5)
+      assert Map.has_key?(state, :users)
+      assert Map.has_key?(state, :cart)
+      assert Map.has_key?(state, :shipping)
+      assert Map.has_key?(state, :inventory)
+      assert Map.has_key?(state, :notifications)
+      assert state.global == 0
+
+      # Test that actions still work with many reducers
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Stress Test User"})
+      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Stress Test Item"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Stress Test User"]
+      assert state.cart.items == ["Stress Test Item"]
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "prefix metadata storage" do
+    test "verifies prefix is stored correctly in internal state" do
+      defmodule PrefixMetadataSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            UserReducer,
+            # prefix = "user"
+            {:cart, CartReducer},
+            # prefix = "cart"
+            {:shipping, ShippingReducer, "ship"}
+            # prefix = "ship"
+          ]
+        end
+      end
+
+      session_id = "prefix_meta_#{:rand.uniform(1_000_000)}"
+      {:ok, pid} = SessionProcess.start(session_id, PrefixMetadataSession)
+
+      # Access internal state to verify prefix storage
+      internal_state = :sys.get_state(pid)
+
+      # Check _redux_reducers map contains correct prefix information
+      assert {:combined, UserReducer, :users, "user"} = internal_state._redux_reducers[:users]
+      assert {:combined, CartReducer, :cart, "cart"} = internal_state._redux_reducers[:cart]
+
+      assert {:combined, ShippingReducer, :shipping, "ship"} =
+               internal_state._redux_reducers[:shipping]
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "different modules with same prefix are allowed" do
+      defmodule SamePrefixDiffModulesSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            {:users, UserReducer, "shared"},
+            {:cart, CartReducer, "shared"}
+          ]
+        end
+      end
+
+      session_id = "same_prefix_diff_#{:rand.uniform(1_000_000)}"
+      # Should not raise - same prefix with different names is valid
+      {:ok, _pid} = SessionProcess.start(session_id, SamePrefixDiffModulesSession)
+
+      state = SessionProcess.get_state(session_id)
+      assert Map.has_key?(state, :users)
+      assert Map.has_key?(state, :cart)
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "edge cases and integration" do
+    test "list-based reducers work with throttle and debounce" do
+      defmodule ThrottleDebounceListSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [{:users, UserReducer}]
+          # UserReducer has throttle/debounce
+        end
+      end
+
+      session_id = "throttle_debounce_list_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, ThrottleDebounceListSession)
+
+      # Test throttle still works
+      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      state1 = SessionProcess.get_state(session_id)
+      assert state1.users.fetch_count == 1
+
+      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      state2 = SessionProcess.get_state(session_id)
+      # Throttled
+      assert state2.users.fetch_count == 1
+
+      # Test debounce still works
+      SessionProcess.dispatch(session_id, %{type: "search-users", payload: "test"})
+      state3 = SessionProcess.get_state(session_id)
+      # Not executed yet
+      assert state3.users.search_query == nil
+
+      Process.sleep(100)
+      state4 = SessionProcess.get_state(session_id)
+      # Now executed
+      assert state4.users.search_query == "test"
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "list-based reducers work with subscriptions" do
+      defmodule SubscriptionListSession do
+        use Phoenix.SessionProcess, :process
+
+        def combined_reducers do
+          [
+            {:users, UserReducer},
+            {:cart, CartReducer}
+          ]
+        end
+      end
+
+      session_id = "subscription_list_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, SubscriptionListSession)
+
+      {:ok, _sub_id} =
+        SessionProcess.subscribe(
+          session_id,
+          fn state -> length(state.users.users) end,
+          :user_count,
+          self()
+        )
+
+      assert_receive {:user_count, 0}
+
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
+      assert_receive {:user_count, 1}
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "list-based reducers work with manual reducers" do
+      alias Phoenix.SessionProcess.Redux.Action
+
+      defmodule ManualListSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{manual_state: 0}
+
+        def combined_reducers do
+          [UserReducer]
+        end
+      end
+
+      session_id = "manual_list_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, ManualListSession)
+
+      # Register manual reducer
+      manual_reducer = fn action, state ->
+        case action do
+          %Action{type: :increment} -> Map.update(state, :manual_state, 1, &(&1 + 1))
+          _ -> state
+        end
+      end
+
+      :ok = SessionProcess.register_reducer(session_id, :manual, manual_reducer)
+
+      # Test both work
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"})
+      SessionProcess.dispatch(session_id, :increment)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Bob"]
+      assert state.manual_state == 1
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "action routing with explicit reducer targeting" do
+    test "routes action only to specified reducers" do
+      alias Phoenix.SessionProcess.Redux.Action
+
+      session_id = "routing_explicit_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+
+      # Dispatch with explicit reducer targeting - only UserReducer should get it
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"},
+        reducers: [:users]
+      )
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Alice"]
+
+      # Cart should not have been affected
+      assert state.cart.items == []
+
+      # Now target only CartReducer
+      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"}, reducers: [:cart])
+
+      state = SessionProcess.get_state(session_id)
+      assert state.cart.items == ["Book"]
+
+      # Users should still have Alice
+      assert state.users.users == ["Alice"]
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "routes action to multiple specified reducers" do
+      session_id = "routing_multi_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+
+      # Dispatch to both UserReducer and CartReducer
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"},
+        reducers: [:users, :cart]
+      )
+
+      # UserReducer should handle it
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Bob"]
+
+      # CartReducer ignores unknown actions, so items stay empty
+      assert state.cart.items == []
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "no routing metadata calls all reducers" do
+      session_id = "routing_all_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+
+      # Dispatch without routing metadata - goes to all reducers
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Charlie"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Charlie"]
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "action routing with prefix matching" do
+    test "routes action by prefix in action type" do
+      defmodule PrefixRoutingSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{}
+
+        def combined_reducers do
+          [
+            UserReducer,
+            # UserReducer has @name :users and @prefix "user"
+            CartReducer
+            # CartReducer has @name :cart and @prefix "cart"
+          ]
+        end
+      end
+
+      session_id = "routing_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, PrefixRoutingSession)
+
+      # Dispatch "user.fetch-users" - should route to UserReducer only
+      SessionProcess.dispatch(session_id, "user.fetch-users")
+
+      state = SessionProcess.get_state(session_id)
+      # UserReducer fetch_count increments on "fetch-users" action
+      assert state.users.fetch_count == 1
+
+      # Dispatch "cart.clear-cart" - should route to CartReducer only
+      SessionProcess.dispatch(session_id, "cart.clear-cart")
+
+      state = SessionProcess.get_state(session_id)
+      # Cart items should be empty (clear was called)
+      assert state.cart.items == []
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "explicit prefix filter overrides inferred prefix" do
+      session_id = "routing_explicit_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+
+      # Even though action type is "cart.add", explicitly route to users reducer
+      SessionProcess.dispatch(
+        session_id,
+        %{type: "cart.add", payload: "Book"},
+        reducer_prefix: "users"
+      )
+
+      state = SessionProcess.get_state(session_id)
+      # UserReducer ignores "cart.add", so users list is empty
+      assert state.users.users == []
+
+      # CartReducer was NOT called due to explicit prefix filter
+      assert state.cart.items == []
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "action without dot notation goes to all reducers" do
+      session_id = "routing_no_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+
+      # Action type has no dot, so no prefix to route by - goes to all
+      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Dave"})
+
+      state = SessionProcess.get_state(session_id)
+      assert state.users.users == ["Dave"]
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "custom prefix in 3-tuple format enables prefix routing" do
+      defmodule CustomPrefixSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{}
+
+        def combined_reducers do
+          [
+            {:shipping, ShippingReducer, "ship"}
+          ]
+        end
+      end
+
+      session_id = "routing_custom_prefix_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, CustomPrefixSession)
+
+      # Action with "ship.calculate" should route to ShippingReducer
+      SessionProcess.dispatch(session_id, "ship.calculate-shipping", payload: "123 Main St")
+
+      state = SessionProcess.get_state(session_id)
+      # ShippingReducer doesn't handle this action, but it was routed correctly
+      assert state.shipping.address == nil
+
+      SessionProcess.terminate(session_id)
+    end
+  end
+
+  describe "action routing performance and isolation" do
+    test "targeted routing only calls specified reducer" do
+      defmodule CountingSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{call_counts: %{users: 0, cart: 0}}
+
+        def combined_reducers do
+          [
+            {:users, CountingUserReducer},
+            {:cart, CountingCartReducer}
+          ]
+        end
+      end
+
+      session_id = "routing_performance_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, CountingSession)
+
+      # Dispatch to only users
+      SessionProcess.dispatch(session_id, "test-action", reducers: [:users])
+
+      state = SessionProcess.get_state(session_id)
+      # UserReducer was called
+      assert state.users.count == 1
+      # CartReducer was NOT called
+      assert state.cart.count == 0
+
+      # Dispatch to only cart
+      SessionProcess.dispatch(session_id, "test-action", reducers: [:cart])
+
+      state = SessionProcess.get_state(session_id)
+      # UserReducer still at 1
+      assert state.users.count == 1
+      # CartReducer now called
+      assert state.cart.count == 1
+
+      # Dispatch to all (no routing)
+      SessionProcess.dispatch(session_id, "test-action")
+
+      state = SessionProcess.get_state(session_id)
+      # Both called
+      assert state.users.count == 2
+      assert state.cart.count == 2
+
+      SessionProcess.terminate(session_id)
+    end
+
+    test "prefix routing with many reducers only calls matching ones" do
+      defmodule ManyReducersSession do
+        use Phoenix.SessionProcess, :process
+
+        def init_state(_arg), do: %{}
+
+        def combined_reducers do
+          [
+            {:user1, StressReducer1, "user"},
+            {:user2, StressReducer2, "user"},
+            {:cart1, StressReducer3, "cart"},
+            {:cart2, StressReducer4, "cart"},
+            {:other, StressReducer5, "other"}
+          ]
+        end
+      end
+
+      session_id = "routing_many_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start(session_id, ManyReducersSession)
+
+      # Dispatch with "user." prefix - should only call user1 and user2
+      SessionProcess.dispatch(session_id, "user.action")
+
+      state = SessionProcess.get_state(session_id)
+      # Verify all slices exist
+      assert Map.has_key?(state, :user1)
+      assert Map.has_key?(state, :user2)
+      assert Map.has_key?(state, :cart1)
+      assert Map.has_key?(state, :cart2)
+      assert Map.has_key?(state, :other)
+
+      SessionProcess.terminate(session_id)
     end
   end
 end

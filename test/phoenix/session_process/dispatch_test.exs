@@ -12,16 +12,25 @@ defmodule Phoenix.SessionProcess.DispatchTest do
   end
 
   setup do
+    alias Phoenix.SessionProcess.Redux.Action
+
     session_id = "test_session_#{:rand.uniform(1_000_000)}"
     {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
     # Register a simple reducer
     reducer = fn action, state ->
       case action do
-        :increment -> %{state | count: state.count + 1}
-        {:set_count, value} -> %{state | count: value}
-        {:set_user, user} -> %{state | user: user}
-        _ -> state
+        %Action{type: :increment} ->
+          %{state | count: state.count + 1}
+
+        %Action{type: :set_count, payload: value} ->
+          %{state | count: value}
+
+        %Action{type: :set_user, payload: user} ->
+          %{state | user: user}
+
+        _ ->
+          state
       end
     end
 
@@ -257,11 +266,16 @@ defmodule Phoenix.SessionProcess.DispatchTest do
 
   describe "register_reducer/3" do
     test "can register multiple reducers", %{session_id: session_id} do
+      alias Phoenix.SessionProcess.Redux.Action
+
       # Add another reducer
       multiplier_reducer = fn action, state ->
         case action do
-          {:multiply_count, factor} -> %{state | count: state.count * factor}
-          _ -> state
+          %Action{type: :multiply_count, payload: factor} ->
+            %{state | count: state.count * factor}
+
+          _ ->
+            state
         end
       end
 
@@ -277,11 +291,16 @@ defmodule Phoenix.SessionProcess.DispatchTest do
     end
 
     test "reducers are applied in order", %{session_id: session_id} do
+      alias Phoenix.SessionProcess.Redux.Action
+
       # Add reducer that doubles
       doubler = fn action, state ->
         case action do
-          :double -> %{state | count: state.count * 2}
-          _ -> state
+          %Action{type: :double} ->
+            %{state | count: state.count * 2}
+
+          _ ->
+            state
         end
       end
 
