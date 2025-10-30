@@ -66,26 +66,16 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.Cleanup` - TTL-based cleanup
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
-**LiveView Integration**:
-- `Phoenix.SessionProcess.LiveView` - LiveView integration helpers with Redux Store API (v0.6.0+)
-  - **New API**: `mount_store/4`, `unmount_store/1`, `dispatch_store/3` (recommended)
-  - **Legacy API**: `mount_session/4`, `unmount_session/1` (deprecated, still works)
-
-**State Management Utilities**:
-- **Redux Store API (v0.6.0+)**: Built directly into `Phoenix.SessionProcess` (recommended)
-  - SessionProcess IS the Redux store - no separate struct needed
-  - Functions: `dispatch/3`, `subscribe/4`, `register_reducer/3`, `register_selector/3`, `get_state/2`
-  - 70% less boilerplate than old Redux API
-
-- **Legacy Redux Module** (deprecated as of v0.6.0):
-  - `Phoenix.SessionProcess.Redux` - Separate Redux struct (deprecated, still works)
-  - `Phoenix.SessionProcess.Redux.Selector` - Memoized selectors
-  - `Phoenix.SessionProcess.Redux.Subscription` - Subscription management
-  - Migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+**State Management**:
+- `Phoenix.SessionProcess.Action` - Internal action structure for dispatching
+- `Phoenix.SessionProcess.ReducerCompiler` - Compile-time reducer validation and code generation
 
 **Configuration & Error Handling**:
 - `Phoenix.SessionProcess.Config` - Configuration management
 - `Phoenix.SessionProcess.Error` - Error types and messages
+
+**LiveView Integration**:
+- `Phoenix.SessionProcess.LiveView` - LiveView integration helpers with Redux Store API
 
 **Observability**:
 - `Phoenix.SessionProcess.Telemetry` - Telemetry event emission
@@ -97,9 +87,7 @@ The library is organized into several logical groups:
 1. **Phoenix.SessionProcess** (lib/phoenix/session_process.ex:1)
    - Main module providing the public API
    - Delegates to ProcessSupervisor for actual process management
-   - Provides the `:process` macro with built-in Redux Store infrastructure (v0.6.0+)
-   - The macro injects: `get_session_id/0` helper and Redux infrastructure
-   - Note: `:process_link` is deprecated - use `:process` instead
+   - Provides the `:process` and `:reducer` macros with built-in Redux Store infrastructure
 
    **Basic Functions**:
    - `start/1-3` - Start session process
@@ -109,83 +97,137 @@ The library is organized into several logical groups:
    - `started?/1` - Check if session exists
    - `list_session/0` - List all sessions
 
-   **Redux Store API (v0.6.0+)** - SessionProcess IS the Redux store:
-   - `dispatch/3` - Dispatch actions (sync or async)
+   **Redux Store API (v1.0.0)** - SessionProcess IS the Redux store:
+   - `dispatch/4` - Dispatch actions: `dispatch(session_id, type, payload \\ nil, meta \\ [])`
+   - `dispatch_async/4` - Async dispatch returning cancellation: `{:ok, cancel_fn}`
    - `subscribe/4` - Subscribe with selector
    - `unsubscribe/2` - Remove subscription
-   - `register_reducer/3` - Register named reducer
-   - `register_selector/3` - Register named selector
-   - `get_state/2` - Get state (with optional selector)
-   - `select/2` - Apply registered selector
+   - `get_state/1-2` - Get state (client-side, with optional selector)
+   - `select_state/2` - Apply selector on server-side (more efficient for large states)
 
    **Process Macro Usage**:
    ```elixir
    defmodule MySessionProcess do
      use Phoenix.SessionProcess, :process
 
-     # NEW: Define initial state with user_init/1
-     def user_init(_args) do
+     # Define initial state with init_state/1
+     def init_state(_args) do
        %{count: 0, user: nil}
+     end
+
+     # Optional: Define combined reducers
+     def combined_reducers do
+       [MyApp.CounterReducer, MyApp.UserReducer]
      end
    end
    ```
 
-2. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
+   **Reducer Macro Usage** (v1.0.0+):
+   ```elixir
+   defmodule MyApp.CounterReducer do
+     use Phoenix.SessionProcess, :reducer
+
+     # REQUIRED: Name must be an atom
+     @name :counter
+
+     # OPTIONAL: Action prefix must be binary or nil
+     @action_prefix "counter"
+
+     def init_state do
+       %{count: 0}
+     end
+
+     # Actions are Action structs with binary types
+     def handle_action(action, state) do
+       alias Phoenix.SessionProcess.Action
+
+       case action do
+         %Action{type: "increment"} ->
+           %{state | count: state.count + 1}
+
+         %Action{type: "set", payload: value} ->
+           %{state | count: value}
+
+         _ ->
+           state
+       end
+     end
+
+     # Optional: Handle async actions, must return cancellation callback
+     def handle_async(action, dispatch, state) do
+       alias Phoenix.SessionProcess.Action
+
+       case action do
+         %Action{type: "fetch_data", payload: url} ->
+           Task.async(fn ->
+             data = HTTPClient.get(url)
+             # dispatch has signature: dispatch(type, payload \\ nil, meta \\ [])
+             dispatch.("data_received", data)
+           end)
+           # Return cancellation callback
+           fn ->
+             # Cancel logic here
+             :ok
+           end
+
+         _ ->
+           fn -> nil end
+       end
+     end
+   end
+   ```
+
+2. **Phoenix.SessionProcess.Action** (lib/phoenix/session_process/action.ex:1)
+   - Internal action structure for fast pattern matching
+   - **IMPORTANT**: Action types MUST be binary strings, not atoms
+   - Fields:
+     - `type` - Action type (binary string, required)
+     - `payload` - Action data (any term)
+     - `meta` - Action metadata (map internally, keyword list in API)
+
+   **Creating Actions**:
+   ```elixir
+   # Actions are created internally from dispatch calls
+   dispatch(session_id, "increment")  # type: "increment", payload: nil
+   dispatch(session_id, "set_user", %{id: 1})  # type: "set_user", payload: %{id: 1}
+   dispatch(session_id, "fetch", nil, async: true)  # meta: %{async: true}
+   ```
+
+3. **Phoenix.SessionProcess.ReducerCompiler** (lib/phoenix/session_process/reducer_compiler.ex:1)
+   - Compile-time validation and code generation for reducers
+   - Validates `@name` is an atom
+   - Validates `@action_prefix` is binary, nil, or ""
+   - Generates `get_name/0`, `get_action_prefix/0`, and default callbacks
+
+4. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
    - Top-level supervisor that manages the Registry, ProcessSupervisor, and Cleanup
    - Must be added to the application's supervision tree
    - Supervises: Registry, ProcessSupervisor, and Cleanup GenServer
 
-3. **Phoenix.SessionProcess.ProcessSupervisor** (lib/phoenix/session_process/process_superviser.ex:1)
+5. **Phoenix.SessionProcess.ProcessSupervisor** (lib/phoenix/session_process/process_superviser.ex:1)
    - DynamicSupervisor that manages individual session processes
    - Handles starting, terminating, and communicating with session processes
    - Performs session validation and limit checks (max sessions, rate limiting)
    - Emits telemetry events for all operations
 
-4. **Phoenix.SessionProcess.SessionId** (lib/phoenix/session_process/session_id.ex)
+6. **Phoenix.SessionProcess.SessionId** (lib/phoenix/session_process/session_id.ex)
    - Plug that generates unique session IDs
    - Must be placed after `:fetch_session` plug in router pipeline
    - Assigns session_id to conn.assigns for use in controllers/LiveViews
 
-5. **Phoenix.SessionProcess.Cleanup** (lib/phoenix/session_process/cleanup.ex:1)
+7. **Phoenix.SessionProcess.Cleanup** (lib/phoenix/session_process/cleanup.ex:1)
    - GenServer for automatic TTL-based session cleanup
    - Schedules session expiration on creation
    - Runs cleanup tasks periodically
 
-6. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
+8. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
    - LiveView integration helpers for Redux Store API
-
-   **New Redux Store API (v0.6.0+)** - Recommended:
    - `mount_store/4` - Mount with direct SessionProcess subscriptions
    - `unmount_store/1` - Unmount (optional, automatic cleanup via monitoring)
-   - `dispatch_store/3` - Dispatch actions (sync/async)
+   - `dispatch_store/3-4` - Dispatch actions (sync/async)
    - Uses SessionProcess subscriptions (not PubSub)
    - Selector-based updates for efficiency
    - Automatic cleanup via process monitoring
-
-   **Legacy Redux API** (deprecated, still works):
-   - `mount_session/3-4` - Mount with PubSub (default state_key: :get_redux_state)
-   - `unmount_session/1` - Unmount from PubSub
-   - `dispatch/2`, `dispatch_async/2` - Generic dispatch helpers
-   - Uses PubSub topic: `"session:#{session_id}:redux"`
-   - Message format: `{:redux_state_change, %{state: state, action: action, timestamp: timestamp}}`
-
-7. **Phoenix.SessionProcess.Redux** (lib/phoenix/session_process/redux.ex:1) - **DEPRECATED as of v0.6.0**
-   - **Use the new Redux Store API instead** (built into SessionProcess)
-   - Old Redux struct-based state management (deprecated, still works)
-   - Requires managing separate Redux struct: `%Redux{current_state: ...}`
-   - Functions marked with `@deprecated` annotations
-   - Runtime deprecation warnings guide migration
-   - Migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
-
-   **Legacy features** (all moved to SessionProcess in v0.6.0):
-   - Actions, reducers, subscriptions, selectors
-   - Time-travel debugging, middleware, action history
-   - PubSub integration for distributed state
-
-   **Migration path**:
-   - Old: `Redux.init_state(...)` → New: `def user_init(_), do: %{...}`
-   - Old: `Redux.dispatch(redux, action, reducer)` → New: `SessionProcess.dispatch(session_id, action)`
-   - Old: `Redux.subscribe(redux, selector, callback)` → New: `SessionProcess.subscribe(session_id, selector, event, pid)`
 
 ### Process Management Flow
 
@@ -195,34 +237,43 @@ The library is organized into several logical groups:
 4. Processes are registered in `Phoenix.SessionProcess.Registry` with two entries:
    - `{session_id, pid}` for session lookup
    - `{pid, module}` for module tracking
-5. TTL-based cleanup is scheduled for each session
-6. Communication via `call/2-3` and `cast/2`
-7. Automatic cleanup when processes terminate or TTL expires
+5. Reducers are registered and compiled with validation
+6. TTL-based cleanup is scheduled for each session
+7. Communication via `call/2-3` and `cast/2`
+8. Actions dispatched via `dispatch/4` or `dispatch_async/4`
+9. Automatic cleanup when processes terminate or TTL expires
 
 ### Key Design Patterns
 
 - Uses Registry for bidirectional lookups (session_id ↔ pid, pid ↔ module)
 - DynamicSupervisor for on-demand process creation
-- `:process` macro injects GenServer boilerplate + Redux Store infrastructure (v0.6.0+)
+- `:process` macro injects GenServer boilerplate + Redux Store infrastructure
+- `:reducer` macro provides compile-time validation and code generation
 
-- **Redux Store API (v0.6.0+)** - SessionProcess IS the Redux store:
-  - All state updates go through `SessionProcess.dispatch(session_id, action)`
-  - Subscriptions use selectors: `SessionProcess.subscribe(session_id, selector, event, pid)`
+- **Redux Store API** - SessionProcess IS the Redux store:
+  - All state updates go through `dispatch(session_id, type, payload, meta)`
+  - **CRITICAL**: Action types MUST be binary strings (e.g., "increment", "user.set")
+  - Subscriptions use selectors for efficiency
   - Automatic subscription cleanup via process monitoring
-  - No separate Redux struct needed - just return state from `user_init/1`
-  - 70% less boilerplate than old Redux API
+  - No separate Redux struct needed
+  - Async actions return cancellation callbacks
 
-- **LiveView Integration (v0.6.0+)**:
+- **Type Constraints (v1.0.0+)**:
+  - Reducer `@name` MUST be an atom (compile-time enforced)
+  - Action types MUST be binary strings (runtime enforced)
+  - Reducer `@action_prefix` MUST be binary, nil, or "" (compile-time enforced)
+  - `dispatch/4` signature: `dispatch(session_id, type, payload \\ nil, meta \\ [])`
+    - `type`: binary string (required)
+    - `payload`: any term (defaults to nil)
+    - `meta`: keyword list (defaults to [])
+  - `dispatch_async/4` returns `{:ok, cancel_fn}` where cancel_fn is `(() -> :ok)`
+  - `handle_async/3` MUST return cancellation callback `(() -> any())`
+
+- **LiveView Integration**:
   - Use `Phoenix.SessionProcess.LiveView.mount_store/4` for direct subscriptions
-  - No PubSub configuration needed
   - Selector-based updates for efficiency
   - Message format: `{event_name, selected_value}`
   - Automatic cleanup when LiveView terminates
-
-- **Legacy Redux API** (deprecated):
-  - Old struct-based Redux (still works but deprecated)
-  - PubSub-based LiveView integration (still works but deprecated)
-  - Migration guide available
 
 - Telemetry events for all lifecycle operations (start, stop, call, cast, cleanup, errors)
 - Comprehensive error handling with Phoenix.SessionProcess.Error module
@@ -235,8 +286,7 @@ config :phoenix_session_process,
   session_process: MySessionProcess,  # Default session module
   max_sessions: 10_000,               # Maximum concurrent sessions
   session_ttl: 3_600_000,            # Session TTL in milliseconds (1 hour)
-  rate_limit: 100,                   # Sessions per minute limit
-  pubsub: MyApp.PubSub               # Optional: PubSub module for LiveView integration
+  rate_limit: 100                    # Sessions per minute limit
 ```
 
 Configuration options:
@@ -244,58 +294,176 @@ Configuration options:
 - `max_sessions`: Maximum concurrent sessions (defaults to 10,000)
 - `session_ttl`: Session TTL in milliseconds (defaults to 1 hour)
 - `rate_limit`: Sessions per minute limit (defaults to 100)
-- `pubsub`: PubSub module for broadcasting state changes (optional, required for LiveView integration)
 
 ## Usage in Phoenix Applications
 
 1. Add supervisor to application supervision tree
 2. Add SessionId plug after fetch_session in router
 3. Define custom session process modules using the `:process` macro
-4. Start processes with session IDs
-5. Communicate using call/cast operations
-6. For LiveView integration, use `Phoenix.SessionProcess.LiveView` helpers
+4. Define reducers using the `:reducer` macro (v1.0.0+)
+5. Start processes with session IDs
+6. Dispatch actions using `dispatch/4` with binary action types
+7. For LiveView integration, use `Phoenix.SessionProcess.LiveView` helpers
 
-### LiveView Integration Example (New Redux Store API - v0.6.0+)
+### Complete Example (v1.0.0)
 
-**Session Process:**
+**1. Define Reducers:**
+```elixir
+defmodule MyApp.CounterReducer do
+  use Phoenix.SessionProcess, :reducer
+
+  @name :counter  # MUST be atom
+  @action_prefix "counter"  # MUST be binary or nil
+
+  def init_state do
+    %{count: 0}
+  end
+
+  def handle_action(action, state) do
+    alias Phoenix.SessionProcess.Action
+
+    case action do
+      %Action{type: "counter.increment"} ->
+        %{state | count: state.count + 1}
+
+      %Action{type: "counter.set", payload: value} ->
+        %{state | count: value}
+
+      _ ->
+        state
+    end
+  end
+end
+
+defmodule MyApp.UserReducer do
+  use Phoenix.SessionProcess, :reducer
+
+  @name :user
+  @action_prefix "user"
+
+  def init_state do
+    %{current_user: nil, preferences: %{}}
+  end
+
+  def handle_action(action, state) do
+    alias Phoenix.SessionProcess.Action
+
+    case action do
+      %Action{type: "user.set", payload: user} ->
+        %{state | current_user: user}
+
+      %Action{type: "user.update_preferences", payload: prefs} ->
+        %{state | preferences: Map.merge(state.preferences, prefs)}
+
+      _ ->
+        state
+    end
+  end
+
+  # Async action example - MUST return cancellation callback
+  def handle_async(action, dispatch, state) do
+    alias Phoenix.SessionProcess.Action
+
+    case action do
+      %Action{type: "user.fetch", payload: user_id} ->
+        task = Task.async(fn ->
+          user = MyApp.Users.get(user_id)
+          # dispatch signature: dispatch(type, payload \\ nil, meta \\ [])
+          dispatch.("user.set", user)
+        end)
+
+        # Return cancellation callback
+        fn ->
+          Task.shutdown(task, :brutal_kill)
+          :ok
+        end
+
+      _ ->
+        fn -> nil end
+    end
+  end
+end
+```
+
+**2. Define Session Process:**
 ```elixir
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
 
-  # NEW: Just define initial state with user_init/1
-  def user_init(_args) do
-    %{count: 0, user: nil}
+  def init_state(_args) do
+    %{}
+  end
+
+  def combined_reducers do
+    [MyApp.CounterReducer, MyApp.UserReducer]
   end
 end
 ```
 
-**Register Reducer and Use:**
+**3. Configure Application:**
 ```elixir
-# In your controller or LiveView mount:
-session_id = conn.assigns.session_id
+# config/config.exs
+config :phoenix_session_process,
+  session_process: MyApp.SessionProcess,
+  max_sessions: 10_000,
+  session_ttl: 3_600_000
 
-# Start session
-Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
+# lib/my_app/application.ex
+def start(_type, _args) do
+  children = [
+    Phoenix.SessionProcess.Supervisor,
+    # ... other children
+  ]
 
-# Register reducer (note: first parameter is action, second is state)
-reducer = fn action, state ->
-  case action do
-    :increment -> %{state | count: state.count + 1}
-    {:set_user, user} -> %{state | user: user}
-    _ -> state
-  end
+  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+  Supervisor.start_link(children, opts)
 end
-
-Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
-
-# Dispatch actions (returns :ok, all dispatches are async)
-:ok = Phoenix.SessionProcess.dispatch(session_id, :increment)
-
-# Get state after dispatch
-state = Phoenix.SessionProcess.get_state(session_id)
 ```
 
-**LiveView (NEW API):**
+**4. Add Plug to Router:**
+```elixir
+# lib/my_app_web/router.ex
+pipeline :browser do
+  plug :fetch_session
+  plug Phoenix.SessionProcess.SessionId  # After :fetch_session
+  # ... other plugs
+end
+```
+
+**5. Use in Controller:**
+```elixir
+defmodule MyAppWeb.PageController do
+  use MyAppWeb, :controller
+  alias Phoenix.SessionProcess
+
+  def index(conn, _params) do
+    session_id = conn.assigns.session_id
+
+    # Start session
+    {:ok, _pid} = SessionProcess.start(session_id)
+
+    # Dispatch actions (MUST use binary types)
+    :ok = SessionProcess.dispatch(session_id, "counter.increment")
+    :ok = SessionProcess.dispatch(session_id, "user.set", %{id: 1, name: "Alice"})
+
+    # Async dispatch with cancellation
+    {:ok, cancel_fn} = SessionProcess.dispatch_async(
+      session_id,
+      "user.fetch",
+      123,
+      async: true
+    )
+
+    # Get state
+    state = SessionProcess.get_state(session_id)
+    # => %{counter: %{count: 1}, user: %{current_user: %{id: 1, name: "Alice"}}}
+
+    render(conn, "index.html", state: state)
+  end
+end
+```
+
+**6. LiveView Integration:**
 ```elixir
 defmodule MyAppWeb.DashboardLive do
   use Phoenix.LiveView
@@ -303,112 +471,98 @@ defmodule MyAppWeb.DashboardLive do
   alias Phoenix.SessionProcess.LiveView, as: SessionLV
 
   def mount(_params, %{"session_id" => session_id}, socket) do
-    # NEW: mount_store with direct subscription
-    case SessionLV.mount_store(socket, session_id) do
-      {:ok, socket, state} ->
-        {:ok, assign(socket, state: state, session_id: session_id)}
+    # Mount with store subscription
+    case SessionLV.mount_store(
+      socket,
+      session_id,
+      fn state -> state.counter.count end,
+      :count_changed
+    ) do
+      {:ok, socket, initial_count} ->
+        {:ok, assign(socket, count: initial_count, session_id: session_id)}
       {:error, _} ->
         {:ok, socket}
     end
   end
 
-  # NEW: Receive state updates (simpler message format!)
-  def handle_info({:state_changed, new_state}, socket) do
-    {:noreply, assign(socket, state: new_state)}
+  # Receive state updates
+  def handle_info({:count_changed, new_count}, socket) do
+    {:noreply, assign(socket, count: new_count)}
   end
 
-  # NEW: Dispatch actions directly
+  # Dispatch actions (MUST use binary types)
   def handle_event("increment", _params, socket) do
-    :ok = SessionLV.dispatch_store(socket.assigns.session_id, :increment, async: true)
+    # Async dispatch returns cancellation
+    {:ok, _cancel_fn} = SessionLV.dispatch_store(
+      socket.assigns.session_id,
+      "counter.increment",
+      async: true
+    )
     {:noreply, socket}
   end
 
   def terminate(_reason, socket) do
-    # NEW: Cleanup is automatic via process monitoring!
-    # But you can explicitly unmount if desired:
+    # Cleanup is automatic via process monitoring
     SessionLV.unmount_store(socket)
     :ok
   end
 end
 ```
 
-**Benefits of New API:**
-- 70% less boilerplate
-- No Redux struct management
-- No PubSub configuration
-- Automatic cleanup
-- Simpler message format
-```
+## State Management
 
-## State Management Options
+Phoenix.SessionProcess uses a Redux-like architecture where SessionProcess itself is the Redux store:
 
-Phoenix.SessionProcess provides two approaches to state management:
-
-### 1. Redux Store API (v0.6.0+) - Recommended
-
-SessionProcess itself is a Redux store with built-in infrastructure:
-
-**Core Principle**: SessionProcess IS the Redux store - no separate struct needed.
+**Core Principles**:
+1. **SessionProcess IS the Redux store** - no separate struct needed
+2. **Actions MUST have binary types** - not atoms (e.g., "increment", not :increment)
+3. **Reducers are namespaced** - state is organized by reducer name (atom)
+4. **Async actions return cancellation** - `{:ok, cancel_fn}`
 
 **State Update Flow**:
-1. Action dispatched: `SessionProcess.dispatch(session_id, action)`
-2. Registered reducers transform state
-3. SessionProcess notifies subscriptions (automatic)
-4. Subscribers with matching selectors receive updates
-5. Dead subscriptions cleaned up automatically via process monitoring
+1. Action dispatched: `dispatch(session_id, "action_type", payload, meta)`
+2. Action normalized to `%Action{type: "action_type", payload: payload, meta: %{}}`
+3. Registered reducers transform their slice of state
+4. SessionProcess notifies subscriptions automatically
+5. Subscribers with matching selectors receive updates
+6. Dead subscriptions cleaned up automatically via process monitoring
 
-**Benefits**:
-- 70% less boilerplate
-- No Redux struct management
-- Direct SessionProcess integration
-- Automatic subscription cleanup
-- Selector-based updates for efficiency
-
-**Usage**:
+**State Structure**:
 ```elixir
-# Define initial state
-def user_init(_), do: %{count: 0}
+%{
+  counter: %{count: 0},          # From CounterReducer
+  user: %{current_user: nil},    # From UserReducer
+  # ... other reducer states
+}
+```
 
-# Register reducer (note: first parameter is action, second is state)
-SessionProcess.register_reducer(session_id, :counter, fn action, state ->
-  case action do
-    :increment -> %{state | count: state.count + 1}
-    _ -> state
-  end
-end)
+**Selector Functions**:
+```elixir
+# Client-side selection (get_state/2)
+count = SessionProcess.get_state(session_id, fn s -> s.counter.count end)
 
-# Dispatch actions (returns :ok)
-:ok = SessionProcess.dispatch(session_id, :increment)
+# Server-side selection (select_state/2) - more efficient for large states
+count = SessionProcess.select_state(session_id, fn s -> s.counter.count end)
+```
 
-# Get state after dispatch
-state = SessionProcess.get_state(session_id)
-
-# Subscribe with selector
+**Subscriptions**:
+```elixir
+# Subscribe to state changes with selector
 {:ok, sub_id} = SessionProcess.subscribe(
   session_id,
-  fn state -> state.count end,
+  fn state -> state.counter.count end,
   :count_changed,
   self()
 )
+
+# Receive updates when selected value changes
+receive do
+  {:count_changed, new_count} -> IO.puts("Count is now: #{new_count}")
+end
+
+# Unsubscribe (optional, automatic cleanup via monitoring)
+:ok = SessionProcess.unsubscribe(session_id, sub_id)
 ```
-
-### 2. Legacy Redux Module (Deprecated)
-
-Old struct-based Redux (still works but deprecated):
-
-**Core Principle**: Manage separate `%Redux{}` struct in process state.
-
-**Deprecated as of v0.6.0** - use Redux Store API instead.
-
-**Migration Guide**: See `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
-
-### 3. Standard GenServer State (Basic)
-
-For simple session-only processes without LiveView:
-
-**Usage**: Standard `handle_call`, `handle_cast`, and `handle_info` callbacks
-
-**When to use**: Simple state management without LiveView integration
 
 ## Telemetry and Error Handling
 
@@ -433,3 +587,62 @@ Common error responses:
 - `{:error, {:timeout, timeout}}` - Operation timed out
 
 Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.
+
+## Important Notes for Code Changes
+
+1. **Action Types MUST Be Binary**: Never use atoms for action types. Always use strings.
+   ```elixir
+   # CORRECT
+   dispatch(session_id, "increment")
+   dispatch(session_id, "user.set", user)
+
+   # WRONG
+   dispatch(session_id, :increment)  # Will raise ArgumentError
+   ```
+
+2. **Reducer Names MUST Be Atoms**: The `@name` attribute must be an atom.
+   ```elixir
+   # CORRECT
+   @name :counter
+
+   # WRONG
+   @name "counter"  # Compile error
+   ```
+
+3. **Meta is Keyword List in API, Map Internally**:
+   ```elixir
+   # API uses keyword list
+   dispatch(session_id, "action", nil, async: true, foo: :bar)
+
+   # Internally converted to map
+   %Action{meta: %{async: true, foo: :bar}}
+   ```
+
+4. **handle_async MUST Return Cancellation Callback**:
+   ```elixir
+   # CORRECT
+   def handle_async(action, dispatch, state) do
+     fn -> :ok end  # Return cancel function
+   end
+
+   # WRONG
+   def handle_async(action, dispatch, state) do
+     state  # Don't return state!
+   end
+   ```
+
+5. **dispatch_async Returns Cancellation**:
+   ```elixir
+   # Returns {:ok, cancel_fn}
+   {:ok, cancel_fn} = dispatch_async(session_id, "fetch", nil, async: true)
+   cancel_fn.()  # Call to cancel
+   ```
+
+6. **Prefer select_state/2 for Large States**:
+   ```elixir
+   # Server-side selection - more efficient
+   count = SessionProcess.select_state(session_id, fn s -> s.counter.count end)
+
+   # Client-side selection - transfers full state
+   count = SessionProcess.get_state(session_id, fn s -> s.counter.count end)
+   ```

@@ -6,7 +6,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Test reducer module with throttle and debounce
   defmodule UserReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :users
     @action_prefix "user"
@@ -39,7 +39,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Another reducer for testing multiple reducers
   defmodule CartReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :cart
     @action_prefix "cart"
@@ -67,7 +67,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Reducer with custom @name and @action_prefix
   defmodule ShippingReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :shipping
     @action_prefix "ship"
@@ -86,7 +86,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Reducer with @name but no @action_prefix (should default to "inventory")
   defmodule InventoryReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :inventory
 
@@ -104,7 +104,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Reducer without init_state/0 (should default to %{})
   defmodule NotificationsReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :notifications
     @action_prefix "notify"
@@ -121,7 +121,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   # Reducer with special characters in name/prefix
   defmodule SpecialCharsReducer do
     use Phoenix.SessionProcess, :reducer
-    alias Phoenix.SessionProcess.Redux.Action
+    alias Phoenix.SessionProcess.Action
 
     @name :special_chars_test
     @action_prefix "special-chars.test"
@@ -257,38 +257,19 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert CartReducer.__reducer_debounces__() == []
       assert CartReducer.__reducer_module__() == true
     end
-
-    test "verifies init_state delegates to user_init for backward compatibility" do
-      defmodule LegacySessionProcess do
-        use Phoenix.SessionProcess, :process
-
-        def user_init(_arg) do
-          %{legacy: true, count: 100}
-        end
-      end
-
-      session_id = "legacy_session_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start(session_id, LegacySessionProcess)
-
-      state = SessionProcess.get_state(session_id)
-      assert state.legacy == true
-      assert state.count == 100
-
-      SessionProcess.terminate(session_id)
-    end
   end
 
   describe "combined reducers" do
     test "routes actions to the correct reducer slice", %{session_id: session_id} do
       # Dispatch to UserReducer
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Alice"]
       assert state.cart.items == []
 
       # Dispatch to CartReducer
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
+      SessionProcess.dispatch(session_id, "add-item", "Book")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Alice"]
@@ -296,10 +277,10 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
 
     test "multiple actions to different reducers", %{session_id: session_id} do
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Pen"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
+      SessionProcess.dispatch(session_id, "add-user", "Bob")
+      SessionProcess.dispatch(session_id, "add-item", "Book")
+      SessionProcess.dispatch(session_id, "add-item", "Pen")
 
       state = SessionProcess.get_state(session_id)
       assert length(state.users.users) == 2
@@ -307,11 +288,11 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
 
     test "clearing one slice doesn't affect others", %{session_id: session_id} do
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
+      SessionProcess.dispatch(session_id, "add-item", "Book")
 
       # Clear cart
-      SessionProcess.dispatch(session_id, %{type: "clear-cart"})
+      SessionProcess.dispatch(session_id, "clear-cart")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Alice"]
@@ -322,14 +303,14 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   describe "throttle functionality" do
     test "throttles rapid action dispatches", %{session_id: session_id} do
       # First call should execute
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      SessionProcess.dispatch(session_id, "fetch-users")
 
       state1 = SessionProcess.get_state(session_id)
       assert state1.users.fetch_count == 1
 
       # Rapid calls within throttle window (100ms) should be blocked
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      SessionProcess.dispatch(session_id, "fetch-users")
+      SessionProcess.dispatch(session_id, "fetch-users")
 
       state2 = SessionProcess.get_state(session_id)
       # Count should still be 1 (throttled)
@@ -339,7 +320,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       Process.sleep(150)
 
       # Now it should execute again
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      SessionProcess.dispatch(session_id, "fetch-users")
 
       state3 = SessionProcess.get_state(session_id)
       assert state3.users.fetch_count == 2
@@ -349,11 +330,11 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
   describe "debounce functionality" do
     test "debounces rapid action dispatches", %{session_id: session_id} do
       # Rapid dispatches - only last one should execute after delay
-      SessionProcess.dispatch(session_id, %{type: "search-users", payload: "a"})
+      SessionProcess.dispatch(session_id, "search-users", "a")
       Process.sleep(10)
-      SessionProcess.dispatch(session_id, %{type: "search-users", payload: "ab"})
+      SessionProcess.dispatch(session_id, "search-users", "ab")
       Process.sleep(10)
-      SessionProcess.dispatch(session_id, %{type: "search-users", payload: "abc"})
+      SessionProcess.dispatch(session_id, "search-users", "abc")
 
       # Immediately after, state should not be updated yet
       state1 = SessionProcess.get_state(session_id)
@@ -383,11 +364,11 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert_receive {:user_count_changed, 0}
 
       # Add user - should trigger notification
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
       assert_receive {:user_count_changed, 1}
 
       # Add cart item - should NOT trigger notification (different slice)
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
+      SessionProcess.dispatch(session_id, "add-item", "Book")
       refute_receive {:user_count_changed, _}, 100
     end
 
@@ -413,54 +394,18 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert_receive {:cart_count, 0}
 
       # Dispatch to both slices
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
+      SessionProcess.dispatch(session_id, "add-item", "Book")
 
       assert_receive {:user_count, 1}
       assert_receive {:cart_count, 1}
     end
   end
 
-  describe "manually registered reducers alongside combined reducers" do
-    test "manually registered reducers can access full state" do
-      alias Phoenix.SessionProcess.Redux.Action
-
-      session_id = "manual_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
-
-      # Register a manual reducer that works on global state
-      manual_reducer = fn action, state ->
-        case action do
-          %Action{type: :increment_global} ->
-            Map.update(state, :global_count, 1, &(&1 + 1))
-
-          _ ->
-            state
-        end
-      end
-
-      :ok = SessionProcess.register_reducer(session_id, :global_reducer, manual_reducer)
-
-      # Dispatch action to manual reducer
-      SessionProcess.dispatch(session_id, :increment_global)
-
-      state = SessionProcess.get_state(session_id)
-      assert state.global_count == 1
-
-      # Verify combined reducers still work
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
-      state = SessionProcess.get_state(session_id)
-      assert state.users.users == ["Alice"]
-      assert state.global_count == 1
-
-      SessionProcess.terminate(session_id)
-    end
-  end
-
   describe "error handling" do
     test "unknown actions don't break reducer", %{session_id: session_id} do
       # Dispatch unknown action
-      SessionProcess.dispatch(session_id, %{type: "unknown-action"})
+      SessionProcess.dispatch(session_id, "unknown-action")
 
       # State should be unchanged
       state = SessionProcess.get_state(session_id)
@@ -470,7 +415,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
     test "action without matching slice continues", %{session_id: session_id} do
       # Dispatch action that doesn't match any slice's handlers
-      SessionProcess.dispatch(session_id, %{type: "random-action"})
+      SessionProcess.dispatch(session_id, "random-action")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == []
@@ -653,9 +598,9 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.global == true
 
       # Test actions route to correct slices
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"})
-      SessionProcess.dispatch(session_id, %{type: "calculate-shipping", payload: "123 Main St"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
+      SessionProcess.dispatch(session_id, "add-item", "Book")
+      SessionProcess.dispatch(session_id, "calculate-shipping", "123 Main St")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Alice"]
@@ -699,7 +644,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.inventory == %{stock: 100}
 
       # Dispatch action - should work with default prefix
-      SessionProcess.dispatch(session_id, %{type: "reduce-stock", payload: 20})
+      SessionProcess.dispatch(session_id, "reduce-stock", 20)
 
       state = SessionProcess.get_state(session_id)
       assert state.inventory.stock == 80
@@ -726,7 +671,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.notifications == %{}
 
       # Should still handle actions
-      SessionProcess.dispatch(session_id, %{type: "add-notification", payload: "Hello"})
+      SessionProcess.dispatch(session_id, "add-notification", "Hello")
 
       state = SessionProcess.get_state(session_id)
       assert state.notifications.messages == ["Hello"]
@@ -781,8 +726,8 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.cart == %{items: []}
 
       # Actions should work
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Pen"})
+      SessionProcess.dispatch(session_id, "add-user", "Bob")
+      SessionProcess.dispatch(session_id, "add-item", "Pen")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Bob"]
@@ -812,7 +757,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.shipping == %{address: nil, cost: 0}
 
       # This action should work (module's handle_action doesn't check prefix)
-      SessionProcess.dispatch(session_id, %{type: "calculate-shipping", payload: "456 Oak Ave"})
+      SessionProcess.dispatch(session_id, "calculate-shipping", "456 Oak Ave")
 
       state = SessionProcess.get_state(session_id)
       assert state.shipping.address == "456 Oak Ave"
@@ -841,7 +786,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.secondary_users == %{users: [], fetch_count: 0, search_query: nil}
 
       # Dispatch to both slices
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Primary User"})
+      SessionProcess.dispatch(session_id, "add-user", "Primary User")
 
       state = SessionProcess.get_state(session_id)
       # Both slices receive the action (prefix routing not yet implemented in handle_action)
@@ -869,7 +814,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.special_chars_test == %{data: "test"}
 
       # Test action dispatch
-      SessionProcess.dispatch(session_id, %{type: "update-special"})
+      SessionProcess.dispatch(session_id, "update-special")
 
       state = SessionProcess.get_state(session_id)
       assert state.special_chars_test.data == "updated"
@@ -942,8 +887,8 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.global == 0
 
       # Test that actions still work with many reducers
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Stress Test User"})
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Stress Test Item"})
+      SessionProcess.dispatch(session_id, "add-user", "Stress Test User")
+      SessionProcess.dispatch(session_id, "add-item", "Stress Test Item")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Stress Test User"]
@@ -1025,17 +970,17 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       {:ok, _pid} = SessionProcess.start(session_id, ThrottleDebounceListSession)
 
       # Test throttle still works
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      SessionProcess.dispatch(session_id, "fetch-users")
       state1 = SessionProcess.get_state(session_id)
       assert state1.users.fetch_count == 1
 
-      SessionProcess.dispatch(session_id, %{type: "fetch-users"})
+      SessionProcess.dispatch(session_id, "fetch-users")
       state2 = SessionProcess.get_state(session_id)
       # Throttled
       assert state2.users.fetch_count == 1
 
       # Test debounce still works
-      SessionProcess.dispatch(session_id, %{type: "search-users", payload: "test"})
+      SessionProcess.dispatch(session_id, "search-users", "test")
       state3 = SessionProcess.get_state(session_id)
       # Not executed yet
       assert state3.users.search_query == nil
@@ -1073,45 +1018,8 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
       assert_receive {:user_count, 0}
 
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"})
+      SessionProcess.dispatch(session_id, "add-user", "Alice")
       assert_receive {:user_count, 1}
-
-      SessionProcess.terminate(session_id)
-    end
-
-    test "list-based reducers work with manual reducers" do
-      alias Phoenix.SessionProcess.Redux.Action
-
-      defmodule ManualListSession do
-        use Phoenix.SessionProcess, :process
-
-        def init_state(_arg), do: %{manual_state: 0}
-
-        def combined_reducers do
-          [UserReducer]
-        end
-      end
-
-      session_id = "manual_list_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start(session_id, ManualListSession)
-
-      # Register manual reducer
-      manual_reducer = fn action, state ->
-        case action do
-          %Action{type: :increment} -> Map.update(state, :manual_state, 1, &(&1 + 1))
-          _ -> state
-        end
-      end
-
-      :ok = SessionProcess.register_reducer(session_id, :manual, manual_reducer)
-
-      # Test both work
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"})
-      SessionProcess.dispatch(session_id, :increment)
-
-      state = SessionProcess.get_state(session_id)
-      assert state.users.users == ["Bob"]
-      assert state.manual_state == 1
 
       SessionProcess.terminate(session_id)
     end
@@ -1119,15 +1027,13 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
   describe "action routing with explicit reducer targeting" do
     test "routes action only to specified reducers" do
-      alias Phoenix.SessionProcess.Redux.Action
+      alias Phoenix.SessionProcess.Action
 
       session_id = "routing_explicit_#{:rand.uniform(1_000_000)}"
       {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
       # Dispatch with explicit reducer targeting - only UserReducer should get it
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Alice"},
-        reducers: [:users]
-      )
+      SessionProcess.dispatch(session_id, "add-user", "Alice", reducers: [:users])
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Alice"]
@@ -1136,7 +1042,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.cart.items == []
 
       # Now target only CartReducer
-      SessionProcess.dispatch(session_id, %{type: "add-item", payload: "Book"}, reducers: [:cart])
+      SessionProcess.dispatch(session_id, "add-item", "Book", reducers: [:cart])
 
       state = SessionProcess.get_state(session_id)
       assert state.cart.items == ["Book"]
@@ -1152,9 +1058,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
       # Dispatch to both UserReducer and CartReducer
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Bob"},
-        reducers: [:users, :cart]
-      )
+      SessionProcess.dispatch(session_id, "add-user", "Bob", reducers: [:users, :cart])
 
       # UserReducer should handle it
       state = SessionProcess.get_state(session_id)
@@ -1171,7 +1075,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
       # Dispatch without routing metadata - goes to all reducers
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Charlie"})
+      SessionProcess.dispatch(session_id, "add-user", "Charlie")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Charlie"]
@@ -1224,7 +1128,8 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       # Even though action type is "cart.add", explicitly route to users reducer
       SessionProcess.dispatch(
         session_id,
-        %{type: "cart.add", payload: "Book"},
+        "cart.add",
+        "Book",
         reducer_prefix: "users"
       )
 
@@ -1243,7 +1148,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
 
       # Action type has no dot, so no prefix to route by - goes to all
-      SessionProcess.dispatch(session_id, %{type: "add-user", payload: "Dave"})
+      SessionProcess.dispatch(session_id, "add-user", "Dave")
 
       state = SessionProcess.get_state(session_id)
       assert state.users.users == ["Dave"]
@@ -1297,7 +1202,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       {:ok, _pid} = SessionProcess.start(session_id, CountingSession)
 
       # Dispatch to only users
-      SessionProcess.dispatch(session_id, "test-action", reducers: [:users])
+      SessionProcess.dispatch(session_id, "test-action", nil, reducers: [:users])
 
       state = SessionProcess.get_state(session_id)
       # UserReducer was called
@@ -1306,7 +1211,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       assert state.cart.count == 0
 
       # Dispatch to only cart
-      SessionProcess.dispatch(session_id, "test-action", reducers: [:cart])
+      SessionProcess.dispatch(session_id, "test-action", nil, reducers: [:cart])
 
       state = SessionProcess.get_state(session_id)
       # UserReducer still at 1

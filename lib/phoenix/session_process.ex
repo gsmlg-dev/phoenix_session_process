@@ -563,13 +563,13 @@ defmodule Phoenix.SessionProcess do
   immediately without waiting for the action to be processed.
 
   ## Parameters
-  - `session_id` - Session identifier
-  - `action` - Action to dispatch (any term)
-  - `opts` - Options keyword list:
-    - `:payload` - Payload for the action
+  - `session_id` - Session identifier (binary string)
+  - `action_type` - Action type identifier (binary string, required)
+  - `payload` - Action payload (any term, defaults to nil)
+  - `meta` - Action metadata (keyword list, defaults to []):
     - `:reducers` - List of reducer names to target
     - `:reducer_prefix` - Prefix to filter reducers by
-    - `:async` - Ignored (always async)
+    - `:async` - Route to handle_async/3 (true) or handle_action/2 (false, default)
 
   ## Returns
   - `:ok` - Action dispatched successfully
@@ -581,57 +581,149 @@ defmodule Phoenix.SessionProcess do
       :ok = SessionProcess.dispatch(session_id, "user.reload")
 
       # Action with payload
-      :ok = SessionProcess.dispatch(session_id, "user.update", payload: %{name: "Alice"})
+      :ok = SessionProcess.dispatch(session_id, "user.update", %{name: "Alice"})
 
       # Target specific reducers
-      :ok = SessionProcess.dispatch(session_id, "reload", reducers: [:user, :cart])
+      :ok = SessionProcess.dispatch(session_id, "reload", nil, reducers: [:user, :cart])
 
       # Use prefix routing
-      :ok = SessionProcess.dispatch(session_id, "fetch-data", reducer_prefix: "user")
-  """
-  @spec dispatch(binary(), any(), keyword()) :: :ok | {:error, term()}
-  def dispatch(session_id, action, opts \\ []) do
-    alias Phoenix.SessionProcess.Redux.Action
+      :ok = SessionProcess.dispatch(session_id, "fetch-data", nil, reducer_prefix: "user")
 
-    # Normalize action with all opts (including routing metadata)
-    normalized_action = Action.normalize(action, opts)
+      # Async action (routed to handle_async/3)
+      :ok = SessionProcess.dispatch(session_id, "fetch-data", %{page: 1}, async: true)
+  """
+  @spec dispatch(binary(), String.t(), term(), keyword()) :: :ok | {:error, term()}
+  def dispatch(session_id, action_type, payload \\ nil, meta \\ [])
+
+  def dispatch(session_id, action_type, payload, meta)
+      when is_binary(session_id) and is_binary(action_type) and is_list(meta) do
+    alias Phoenix.SessionProcess.Action
+
+    # Convert keyword list to map for Action struct
+    meta_map = Map.new(meta)
+
+    # Create action from components
+    action = Action.new(action_type, payload, meta_map)
 
     case ProcessSupervisor.session_process_pid(session_id) do
       nil ->
         {:error, {:session_not_found, session_id}}
 
       _pid ->
-        cast(session_id, {:dispatch_action, normalized_action})
+        cast(session_id, {:dispatch_action, action})
         :ok
     end
   end
 
-  @doc """
-  Dispatch an action asynchronously with explicit function name.
+  def dispatch(_session_id, action_type, _payload, _meta) when not is_binary(action_type) do
+    raise ArgumentError, """
+    Action type must be a binary string, got: #{inspect(action_type)}
 
-  This is an alias for `dispatch/3` for better clarity when dispatching async actions.
-  All dispatches are asynchronous by default.
+    Examples:
+        dispatch(session_id, "user.reload")      # Correct
+        dispatch(session_id, :reload)            # Wrong - atom
+    """
+  end
+
+  def dispatch(_session_id, _action_type, _payload, meta) when not is_list(meta) do
+    raise ArgumentError, """
+    Action meta must be a keyword list, got: #{inspect(meta)}
+
+    Examples:
+        dispatch(session_id, "reload", nil, async: true)   # Correct
+        dispatch(session_id, "reload", nil, %{async: true}) # Wrong - map
+    """
+  end
+
+  @doc """
+  Dispatch an action asynchronously and return a cancellation function.
+
+  Unlike `dispatch/4` which returns `:ok`, this function returns a cancel callback
+  that can be used to cancel the pending async action.
 
   ## Parameters
   - `session_id` - Session identifier
-  - `action` - Action to dispatch
-  - `opts` - Options (see `dispatch/3`)
+  - `action_type` - Action type (binary string)
+  - `payload` - Action payload (any term)
+  - `meta` - Action metadata (keyword list)
 
   ## Returns
-  - `:ok` - Action dispatched successfully
+  - `{:ok, cancel_fn}` - Action dispatched successfully with cancellation function
   - `{:error, {:session_not_found, session_id}}` - If session doesn't exist
+
+  The cancellation function has signature: `cancel_fn.() :: :ok`
+  Calling it will attempt to cancel the pending action (best-effort).
 
   ## Examples
 
-      # Explicit async dispatch
-      :ok = SessionProcess.dispatch_async(session_id, "user.reload")
+      # Async dispatch with cancellation
+      {:ok, cancel} = SessionProcess.dispatch_async(session_id, "user.reload")
+
+      # Cancel if needed
+      cancel.()
 
       # With payload
-      :ok = SessionProcess.dispatch_async(session_id, "update", payload: data)
+      {:ok, cancel} = SessionProcess.dispatch_async(session_id, "fetch_data", %{page: 1})
+
+      # Cancel after timeout
+      Process.send_after(self(), {:cancel, cancel}, 5000)
   """
-  @spec dispatch_async(binary(), any(), keyword()) :: :ok | {:error, term()}
-  def dispatch_async(session_id, action, opts \\ []) do
-    dispatch(session_id, action, opts)
+  @spec dispatch_async(binary(), String.t(), term(), keyword()) ::
+          {:ok, (-> :ok)} | {:error, term()}
+  def dispatch_async(session_id, action_type, payload \\ nil, meta \\ [])
+
+  def dispatch_async(session_id, action_type, payload, meta)
+      when is_binary(session_id) and is_binary(action_type) and is_list(meta) do
+    alias Phoenix.SessionProcess.Action
+
+    # Convert keyword list to map for Action struct
+    meta_map = Map.new(meta)
+
+    # Generate unique reference for this dispatch
+    ref = make_ref()
+
+    # Add cancel_ref to meta
+    meta_with_ref = Map.put(meta_map, :cancel_ref, ref)
+
+    # Create action from components
+    action = Action.new(action_type, payload, meta_with_ref)
+
+    case ProcessSupervisor.session_process_pid(session_id) do
+      nil ->
+        {:error, {:session_not_found, session_id}}
+
+      pid ->
+        # Send async dispatch message
+        cast(session_id, {:dispatch_action, action})
+
+        # Return cancel function
+        cancel_fn = fn ->
+          GenServer.cast(pid, {:cancel_action, ref})
+          :ok
+        end
+
+        {:ok, cancel_fn}
+    end
+  end
+
+  def dispatch_async(_session_id, action_type, _payload, _meta) when not is_binary(action_type) do
+    raise ArgumentError, """
+    Action type must be a binary string, got: #{inspect(action_type)}
+
+    Examples:
+        dispatch_async(session_id, "user.reload")      # Correct
+        dispatch_async(session_id, :reload)            # Wrong - atom
+    """
+  end
+
+  def dispatch_async(_session_id, _action_type, _payload, meta) when not is_list(meta) do
+    raise ArgumentError, """
+    Action meta must be a keyword list, got: #{inspect(meta)}
+
+    Examples:
+        dispatch_async(session_id, "reload", nil, async: true)   # Correct
+        dispatch_async(session_id, "reload", nil, %{async: true}) # Wrong - map
+    """
   end
 
   @doc """
@@ -705,81 +797,14 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Register a reducer function for the session.
+  Get the current state, optionally applying a selector function locally.
 
-  Reducers are called in registration order when actions are dispatched.
-
-  ## Parameters
-  - `session_id` - Session identifier
-  - `name` - Atom identifier for this reducer
-  - `reducer_fn` - Function with signature: `(action, state) -> new_state`
-
-  ## Returns
-  - `:ok` - Reducer registered successfully
-  - `{:error, reason}` - If session not found
-
-  ## Examples
-
-      defmodule MyReducers do
-        def counter_reducer(action, state) do
-          case action do
-            :increment -> %{state | count: state.count + 1}
-            :decrement -> %{state | count: state.count - 1}
-            {:set, value} -> %{state | count: value}
-            _ -> state
-          end
-        end
-      end
-
-      SessionProcess.register_reducer(
-        session_id,
-        :counter,
-        &MyReducers.counter_reducer/2
-      )
-  """
-  @spec register_reducer(binary(), atom(), function()) :: :ok | {:error, term()}
-  def register_reducer(session_id, name, reducer_fn)
-      when is_atom(name) and is_function(reducer_fn, 2) do
-    call(session_id, {:register_reducer, name, reducer_fn})
-  end
-
-  @doc """
-  Register a named selector for the session.
-
-  Named selectors can be retrieved and reused by name.
+  This function retrieves the full state from the session process and optionally
+  applies a selector function on the client side.
 
   ## Parameters
   - `session_id` - Session identifier
-  - `name` - Atom identifier for this selector
-  - `selector_fn` - Function with signature: `(state) -> selected_data`
-
-  ## Returns
-  - `:ok` - Selector registered successfully
-  - `{:error, reason}` - If session not found
-
-  ## Examples
-
-      SessionProcess.register_selector(
-        session_id,
-        :user_name,
-        fn state -> get_in(state, [:user, :name]) end
-      )
-
-      # Later, use the selector
-      name = SessionProcess.select(session_id, :user_name)
-  """
-  @spec register_selector(binary(), atom(), function()) :: :ok | {:error, term()}
-  def register_selector(session_id, name, selector_fn)
-      when is_atom(name) and is_function(selector_fn, 1) do
-    call(session_id, {:register_selector, name, selector_fn})
-  end
-
-  @doc """
-  Get the current state, optionally applying a selector.
-
-  ## Parameters
-  - `session_id` - Session identifier
-  - `selector` - Optional selector function or registered selector name
+  - `selector` - Optional selector function `(state) -> selected_data`
 
   ## Returns
   - State or selected data
@@ -790,13 +815,14 @@ defmodule Phoenix.SessionProcess do
       # Get full state
       state = SessionProcess.get_state(session_id)
 
-      # Get with inline selector
+      # Get with inline selector (applied locally)
       user = SessionProcess.get_state(session_id, fn s -> s.user end)
 
-      # Get with registered selector
-      user = SessionProcess.get_state(session_id, :current_user)
+  ## See Also
+
+  - `select_state/2` - Apply selector on server side (more efficient for large states)
   """
-  @spec get_state(binary(), function() | atom() | nil) :: any()
+  @spec get_state(binary(), function() | nil) :: any()
   def get_state(session_id, selector \\ nil) do
     case call(session_id, :get_state) do
       {:ok, state} when is_nil(selector) ->
@@ -805,45 +831,52 @@ defmodule Phoenix.SessionProcess do
       {:ok, state} when is_function(selector, 1) ->
         selector.(state)
 
-      {:ok, state} when is_atom(selector) ->
-        # Get registered selector and apply it
-        case call(session_id, {:get_selector, selector}) do
-          {:ok, selector_fn} -> selector_fn.(state)
-          _ -> state
-        end
-
       error ->
         error
     end
   end
 
   @doc """
-  Apply a registered selector by name.
+  Select state using a selector function applied on the server side.
+
+  This function sends the selector to the session process where it is applied,
+  returning only the selected data. This is more efficient than `get_state/2`
+  when dealing with large state objects, as it avoids transferring the entire
+  state over the process boundary.
 
   ## Parameters
   - `session_id` - Session identifier
-  - `selector_name` - Atom name of registered selector
+  - `selector` - Selector function `(state) -> selected_data` (must be a function reference or anonymous function)
 
   ## Returns
-  - Selected data
-  - `{:error, reason}` - If session or selector not found
+  - Selected data from state
+  - `{:error, reason}` - If session not found
 
   ## Examples
 
-      SessionProcess.register_selector(session_id, :count, fn s -> s.count end)
-      count = SessionProcess.select(session_id, :count)
-  """
-  @spec select(binary(), atom()) :: any()
-  def select(session_id, selector_name) when is_atom(selector_name) do
-    case call(session_id, {:get_selector, selector_name}) do
-      {:ok, selector_fn} ->
-        case call(session_id, :get_state) do
-          {:ok, state} -> selector_fn.(state)
-          error -> error
-        end
+      # Select specific field (server-side selection)
+      user = SessionProcess.select_state(session_id, fn s -> s.user end)
 
-      error ->
-        error
+      # Select nested data
+      cart_count = SessionProcess.select_state(session_id, fn s -> length(s.cart) end)
+
+      # Select computed value
+      total = SessionProcess.select_state(session_id, fn s ->
+        Enum.reduce(s.cart, 0, fn item, acc -> acc + item.price end)
+      end)
+
+  ## Performance Note
+
+  Use `select_state/2` instead of `get_state/2` when:
+  - State is large and you only need a small portion
+  - You want to compute derived values on the server side
+  - You want to minimize data transfer between processes
+  """
+  @spec select_state(binary(), function()) :: any()
+  def select_state(session_id, selector) when is_function(selector, 1) do
+    case call(session_id, {:select_state, selector}) do
+      {:ok, selected} -> selected
+      error -> error
     end
   end
 
@@ -854,38 +887,47 @@ defmodule Phoenix.SessionProcess do
 
       defmodule MyApp.Reducers.UserReducer do
         use Phoenix.SessionProcess, :reducer
+        alias Phoenix.SessionProcess.Action
+
+        @name :user
+        @action_prefix "user"
 
         def init_state do
           %{users: [], loading: false, query: nil}
         end
 
         @throttle {"fetch-list", "3000ms"}
-        def handle_action(%{type: "fetch-list"}, state) do
+        def handle_action(%Action{type: "fetch-list"}, state) do
           # Throttled: Only executes once per 3 seconds
           %{state | loading: true}
         end
 
         @debounce {"update-query", "500ms"}
-        def handle_action(%{type: "update-query", payload: query}, state) do
+        def handle_action(%Action{type: "update-query", payload: query}, state) do
           # Debounced: Waits 500ms after last call
           %{state | query: query}
         end
 
-        def handle_async(%{type: "load", payload: %{page: page}}, dispatch, state) do
+        def handle_async(%Action{type: "load", payload: %{page: page}}, dispatch, _state) do
           # Async action with dispatch callback
-          Task.async(fn ->
+          # dispatch signature: dispatch(type, payload \\ nil, meta \\ [])
+          # Must return cancellation function
+          task = Task.async(fn ->
             data = fetch_data(page)
-            dispatch.(%{type: "load_success", payload: data})
+            dispatch.("load_success", data)
           end)
-          %{state | loading: true}
+
+          fn -> Task.shutdown(task, :brutal_kill) end
         end
       end
 
   ## Callbacks
 
   - `init_state/0` - Define initial state for this reducer's slice (optional, defaults to `%{}`)
-  - `handle_action/2` - Handle synchronous actions, return updated state
-  - `handle_async/3` - Handle async actions with dispatch callback, return updated state
+  - `handle_action/2` - Handle synchronous actions (receives Action struct), return updated state
+  - `handle_async/3` - Handle async actions with dispatch callback, return cancellation function `(() -> any())`
+    - dispatch signature: `dispatch(type, payload \\ nil, meta \\ [])` where type is binary, meta is keyword list
+    - Default implementation returns `fn -> nil end`
 
   ## Module Attributes
 
@@ -902,7 +944,7 @@ defmodule Phoenix.SessionProcess do
   """
   defmacro __using__(:reducer) do
     quote do
-      @before_compile Phoenix.SessionProcess.Redux.ReducerCompiler
+      @before_compile Phoenix.SessionProcess.ReducerCompiler
 
       # Reducer identity
       Module.register_attribute(__MODULE__, :name, accumulate: false)
@@ -947,7 +989,7 @@ defmodule Phoenix.SessionProcess do
 
       ## Parameters
 
-      - `action` - The action to process (any term)
+      - `action` - The action to process (Action struct with type, payload, meta)
       - `state` - The current state slice for this reducer
 
       ## Returns
@@ -956,12 +998,19 @@ defmodule Phoenix.SessionProcess do
 
       ## Examples
 
-          def handle_action(:increment, state) do
+          alias Phoenix.SessionProcess.Action
+
+          def handle_action(%Action{type: "increment"}, state) do
             %{state | count: state.count + 1}
           end
 
-          def handle_action(%{type: "set_user", payload: user}, state) do
+          def handle_action(%Action{type: "set_user", payload: user}, state) do
             %{state | current_user: user}
+          end
+
+          def handle_action(%Action{type: "update", payload: data, meta: meta}, state) do
+            priority = Map.get(meta, :priority, :normal)
+            %{state | data: data, priority: priority}
           end
       """
       def handle_action(_action, state), do: state
@@ -974,29 +1023,50 @@ defmodule Phoenix.SessionProcess do
 
       ## Parameters
 
-      - `action` - The action to process
-      - `dispatch` - Callback function to dispatch new actions: `dispatch.(action)`
+      - `action` - The action to process (Action struct)
+      - `dispatch` - Callback function to dispatch new actions with signature:
+        - `dispatch.(type)` - Dispatch action with type only
+        - `dispatch.(type, payload)` - Dispatch action with type and payload
+        - `dispatch.(type, payload, meta)` - Dispatch action with type, payload, and meta (keyword list)
       - `state` - The current state slice for this reducer
 
       ## Returns
 
-      - `new_state` - The updated state slice
+      - `cancel_fn` - A cancellation function `(() -> any())` that will be called if the action needs to be cancelled
+      - Default implementation returns `fn -> nil end` (no-op cancellation)
 
       ## Examples
 
-          def handle_async(%{type: "fetch_user", payload: id}, dispatch, state) do
-            Task.async(fn ->
+          def handle_async(%Action{type: "fetch_user", payload: id}, dispatch, state) do
+            task = Task.async(fn ->
               user = API.fetch_user(id)
-              dispatch.(%{type: "fetch_user_success", payload: user})
+              dispatch.("fetch_user_success", user)
             rescue
               error ->
-                dispatch.(%{type: "fetch_user_error", payload: %{error: error}})
+                dispatch.("fetch_user_error", %{error: error})
             end)
 
-            %{state | loading: true}
+            # Return cancellation function
+            fn -> Task.shutdown(task, :brutal_kill) end
+          end
+
+          # With meta
+          def handle_async(%Action{type: "load_data"}, dispatch, state) do
+            task = Task.async(fn ->
+              data = API.load_data()
+              dispatch.("load_data_success", data, priority: :high)
+            end)
+
+            fn -> Task.shutdown(task, :brutal_kill) end
+          end
+
+          # Simple case: no cancellation needed
+          def handle_async(%Action{type: "log", payload: msg}, _dispatch, _state) do
+            Logger.info(msg)
+            fn -> nil end
           end
       """
-      def handle_async(_action, _dispatch, state), do: state
+      def handle_async(_action, _dispatch, _state), do: fn -> nil end
 
       defoverridable init_state: 0, handle_action: 2, handle_async: 3
     end
@@ -1006,7 +1076,7 @@ defmodule Phoenix.SessionProcess do
   defmacro __using__(:process) do
     quote do
       use GenServer
-      alias Phoenix.SessionProcess.Redux.Action
+      alias Phoenix.SessionProcess.Action
 
       # ========================================================================
       # GenServer Boilerplate
@@ -1044,7 +1114,7 @@ defmodule Phoenix.SessionProcess do
       """
       @impl true
       def init(arg) do
-        # Call user's initialization - init_state/1 delegates to user_init/1 by default
+        # Call user's initialization callback
         user_state = init_state(arg)
 
         # Load combined reducers if defined
@@ -1075,14 +1145,17 @@ defmodule Phoenix.SessionProcess do
           # Redux infrastructure (internal, prefixed with _redux_)
           _redux_reducers: redux_reducers,
           _redux_reducer_slices: Map.keys(redux_reducers),
-          _redux_selectors: %{},
           _redux_subscriptions: [],
           _redux_middleware: [],
           _redux_history: [],
           _redux_max_history: 100,
-          # NEW: Throttle/debounce state
+          # Throttle/debounce state
           _redux_throttle_state: %{},
-          _redux_debounce_timers: %{}
+          _redux_debounce_timers: %{},
+          # Cancelled action refs
+          _cancelled_refs: MapSet.new(),
+          # Async action cancel functions
+          _async_cancel_fns: %{}
         }
 
         {:ok, state}
@@ -1092,10 +1165,6 @@ defmodule Phoenix.SessionProcess do
       Initialize your application's state.
 
       Override this callback to provide your initial state as a map.
-      This replaces the deprecated `user_init/1` callback.
-
-      For backward compatibility, init_state/1 delegates to user_init/1 by default.
-      You can override either callback - init_state/1 is preferred for new code.
 
       ## Examples
 
@@ -1107,7 +1176,7 @@ defmodule Phoenix.SessionProcess do
             %{user_id: user_id, cart: [], preferences: %{}}
           end
       """
-      def init_state(arg), do: user_init(arg)
+      def init_state(_arg), do: %{}
 
       @doc """
       Define combined reducers for state slicing.
@@ -1160,23 +1229,6 @@ defmodule Phoenix.SessionProcess do
       """
       def combined_reducers, do: []
 
-      @doc deprecated: "Use init_state/1 instead"
-      @doc """
-      User-defined initialization (DEPRECATED).
-
-      Return your application's initial state as a map.
-
-      **DEPRECATED**: This callback is deprecated as of v0.7.0.
-      Please use `init_state/1` instead for better clarity.
-
-      ## Examples
-
-          def user_init(_arg) do
-            %{count: 0, user: nil, items: []}
-          end
-      """
-      def user_init(_arg), do: %{}
-
       # ========================================================================
       # Redux Dispatch Handlers
       # ========================================================================
@@ -1197,8 +1249,46 @@ defmodule Phoenix.SessionProcess do
 
       @impl true
       def handle_cast({:dispatch_action, action}, state) do
-        new_state = dispatch_with_reducers(action, state)
-        {:noreply, new_state}
+        # Check if action has been cancelled
+        cancel_ref = get_in(action.meta, [:cancel_ref])
+
+        if cancel_ref && MapSet.member?(state._cancelled_refs, cancel_ref) do
+          # Action was cancelled, remove from cancelled set and skip processing
+          new_state = %{state | _cancelled_refs: MapSet.delete(state._cancelled_refs, cancel_ref)}
+          {:noreply, new_state}
+        else
+          # Process action normally
+          new_state = dispatch_with_reducers(action, state)
+          {:noreply, new_state}
+        end
+      end
+
+      @impl true
+      def handle_cast({:cancel_action, ref}, state) do
+        # Call the cancel function if it exists
+        cancel_fns = Map.get(state, :_async_cancel_fns, %{})
+
+        case Map.get(cancel_fns, ref) do
+          nil ->
+            # No cancel function, just mark as cancelled
+            new_state = %{state | _cancelled_refs: MapSet.put(state._cancelled_refs, ref)}
+            {:noreply, new_state}
+
+          cancel_fn when is_function(cancel_fn, 0) ->
+            # Call the cancel function
+            cancel_fn.()
+
+            # Remove cancel function and mark as cancelled
+            new_cancel_fns = Map.delete(cancel_fns, ref)
+
+            new_state = %{
+              state
+              | _cancelled_refs: MapSet.put(state._cancelled_refs, ref),
+                _async_cancel_fns: new_cancel_fns
+            }
+
+            {:noreply, new_state}
+        end
       end
 
       # ========================================================================
@@ -1251,32 +1341,18 @@ defmodule Phoenix.SessionProcess do
       end
 
       # ========================================================================
-      # Reducer/Selector Management
+      # State Access
       # ========================================================================
-
-      @impl true
-      def handle_call({:register_reducer, name, reducer_fn}, _from, state) do
-        new_reducers = Map.put(state._redux_reducers, name, reducer_fn)
-        {:reply, :ok, %{state | _redux_reducers: new_reducers}}
-      end
-
-      @impl true
-      def handle_call({:register_selector, name, selector_fn}, _from, state) do
-        new_selectors = Map.put(state._redux_selectors, name, selector_fn)
-        {:reply, :ok, %{state | _redux_selectors: new_selectors}}
-      end
-
-      @impl true
-      def handle_call({:get_selector, name}, _from, state) do
-        case Map.fetch(state._redux_selectors, name) do
-          {:ok, selector_fn} -> {:reply, {:ok, selector_fn}, state}
-          :error -> {:reply, {:error, {:selector_not_found, name}}, state}
-        end
-      end
 
       @impl true
       def handle_call(:get_state, _from, state) do
         {:reply, {:ok, state.app_state}, state}
+      end
+
+      @impl true
+      def handle_call({:select_state, selector}, _from, state) when is_function(selector, 1) do
+        selected = selector.(state.app_state)
+        {:reply, {:ok, selected}, state}
       end
 
       # ========================================================================
@@ -1473,7 +1549,7 @@ defmodule Phoenix.SessionProcess do
 
       # credo:disable-for-lines:60 Credo.Check.Refactor.Nesting
       defp apply_combined_reducer(module, action, slice_key, app_state, internal_state) do
-        alias Phoenix.SessionProcess.Redux.ActionRateLimiter
+        alias Phoenix.SessionProcess.ActionRateLimiter
 
         # Get the state slice for this reducer
         slice_state = Map.get(app_state, slice_key, %{})
@@ -1493,24 +1569,43 @@ defmodule Phoenix.SessionProcess do
             {app_state, new_internal_state}
           else
             # Execute action
-            new_slice_state =
+            {new_slice_state, new_internal_state_with_cancel} =
               if function_exported?(module, :handle_async, 3) and async_action?(action) do
                 # Async action - provide dispatch callback
-                dispatch_fn = fn new_action ->
-                  GenServer.cast(self(), {:dispatch_action, new_action})
-                end
+                # Create a dispatch function that captures self() PID
+                session_pid = self()
 
-                module.handle_async(action, dispatch_fn, slice_state)
+                dispatch_fn = &__async_dispatch__(session_pid, &1, &2, &3)
+
+                # handle_async returns cancel function, not state
+                cancel_fn = module.handle_async(action, dispatch_fn, slice_state)
+
+                # Store cancel function in internal state if action has cancel_ref
+                new_internal_with_cancel =
+                  case get_in(action.meta, [:cancel_ref]) do
+                    nil ->
+                      internal_state
+
+                    ref ->
+                      cancel_fns = Map.get(internal_state, :_async_cancel_fns, %{})
+                      new_cancel_fns = Map.put(cancel_fns, ref, cancel_fn)
+                      Map.put(internal_state, :_async_cancel_fns, new_cancel_fns)
+                  end
+
+                # Async actions don't update state directly - state unchanged
+                {slice_state, new_internal_with_cancel}
               else
-                # Synchronous action
-                module.handle_action(action, slice_state)
+                # Synchronous action updates state
+                new_state = module.handle_action(action, slice_state)
+                {new_state, internal_state}
               end
 
             # Update app_state with new slice
             new_app_state = Map.put(app_state, slice_key, new_slice_state)
 
             # Record throttle if needed
-            new_internal_state = ActionRateLimiter.record_throttle(module, action, internal_state)
+            new_internal_state =
+              ActionRateLimiter.record_throttle(module, action, new_internal_state_with_cancel)
 
             {new_app_state, new_internal_state}
           end
@@ -1527,37 +1622,59 @@ defmodule Phoenix.SessionProcess do
 
       defp async_action?(_), do: false
 
+      # Helper function for async dispatch callback
+      # Accepts: dispatch(type, payload \\ nil, meta \\ [])
+      defp __async_dispatch__(session_pid, type, payload \\ nil, meta \\ [])
+
+      defp __async_dispatch__(session_pid, type, payload, meta)
+           when is_binary(type) and is_list(meta) do
+        meta_map = Map.new(meta)
+        new_action = Action.new(type, payload, meta_map)
+        GenServer.cast(session_pid, {:dispatch_action, new_action})
+      end
+
+      defp __async_dispatch__(_session_pid, type, _payload, _meta) when not is_binary(type) do
+        raise ArgumentError, """
+        dispatch type must be a binary string, got: #{inspect(type)}
+
+        Examples:
+            dispatch.("user.reload")           # Correct
+            dispatch.(:reload)                 # Wrong - atom
+        """
+      end
+
+      defp __async_dispatch__(_session_pid, _type, _payload, meta) when not is_list(meta) do
+        raise ArgumentError, """
+        dispatch meta must be a keyword list, got: #{inspect(meta)}
+
+        Examples:
+            dispatch.("reload", nil, async: true)   # Correct
+            dispatch.("reload", nil, %{async: true}) # Wrong - map
+        """
+      end
+
       defp dispatch_with_reducers(action, state) do
-        alias Phoenix.SessionProcess.Redux.Action
-
-        # Normalize action to Action struct for consistent routing and pattern matching
-        normalized_action = Action.normalize(action, [])
-
+        # Action is already an Action struct from dispatch/4
         old_app_state = state.app_state
 
         # Determine which reducers should handle this action based on routing metadata
-        reducers_to_apply = filter_reducers_for_action(normalized_action, state._redux_reducers)
+        reducers_to_apply = filter_reducers_for_action(action, state._redux_reducers)
 
-        # Apply filtered reducers
+        # Apply filtered reducers (only combined reducers from combined_reducers/0)
         {new_app_state, new_internal_state} =
           Enum.reduce(reducers_to_apply, {old_app_state, state}, fn
-            # Combined reducer (from combined_reducers/0) - new format with prefix
-            {_name, {:combined, module, slice_key, _prefix}}, {acc_app_state, acc_internal_state} ->
+            {_name, {:combined, module, slice_key, _prefix}},
+            {acc_app_state, acc_internal_state} ->
               {updated_app_state, updated_internal_state} =
                 apply_combined_reducer(
                   module,
-                  normalized_action,
+                  action,
                   slice_key,
                   acc_app_state,
                   acc_internal_state
                 )
 
               {updated_app_state, updated_internal_state}
-
-            # Manual reducer (from register_reducer/3)
-            {_name, reducer_fn}, {acc_app_state, acc_internal_state} when is_function(reducer_fn) ->
-              new_acc_app_state = reducer_fn.(normalized_action, acc_app_state)
-              {new_acc_app_state, acc_internal_state}
           end)
 
         # Notify subscribers if state changed
@@ -1580,7 +1697,7 @@ defmodule Phoenix.SessionProcess do
 
       # Filter reducers based on action routing metadata
       defp filter_reducers_for_action(action, all_reducers) do
-        alias Phoenix.SessionProcess.Redux.Action
+        alias Phoenix.SessionProcess.Action
 
         # Check explicit reducer targeting (highest priority)
         case Action.target_reducers(action) do
@@ -1596,7 +1713,7 @@ defmodule Phoenix.SessionProcess do
 
       # Filter reducers by prefix (explicit or inferred from action type)
       defp filter_by_prefix(action, all_reducers) do
-        alias Phoenix.SessionProcess.Redux.Action
+        alias Phoenix.SessionProcess.Action
 
         # Check for explicit prefix filter in action metadata
         prefix_filter = Action.reducer_prefix(action)
@@ -1663,38 +1780,15 @@ defmodule Phoenix.SessionProcess do
       defoverridable init: 1,
                      init_state: 1,
                      combined_reducers: 0,
-                     user_init: 1,
                      handle_call: 3,
                      handle_cast: 2,
                      handle_info: 2
     end
   end
 
-  defmacro __using__(:process_link) do
-    quote do
-      IO.warn(
-        """
-        :process_link is deprecated. Please use :process instead.
-
-        All session processes now include LiveView monitoring functionality by default.
-        LiveView integration now uses subscriptions to process state, so the explicit
-        :process_link option is no longer necessary.
-
-        Change:
-          use Phoenix.SessionProcess, :process_link
-        To:
-          use Phoenix.SessionProcess, :process
-        """,
-        Macro.Env.stacktrace(__ENV__)
-      )
-
-      use Phoenix.SessionProcess, :process
-    end
-  end
-
   @doc false
   def __on_reducer_definition__(env, _kind, _name, _args, _guards, _body) do
-    alias Phoenix.SessionProcess.Redux.ReducerCompiler
+    alias Phoenix.SessionProcess.ReducerCompiler
 
     module = env.module
 

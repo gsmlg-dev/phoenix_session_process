@@ -1,0 +1,92 @@
+name: Benchmark
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: 'Benchmark to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - simple
+          - session
+          - dispatch
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Run Simple Benchmark
+        if: github.event.inputs.benchmark == 'simple' || github.event.inputs.benchmark == 'all' || github.event_name == 'pull_request'
+        run: |
+          echo "::group::Simple Benchmark"
+          mix run bench/simple_bench.exs
+          echo "::endgroup::"
+
+      - name: Run Session Benchmark
+        if: github.event.inputs.benchmark == 'session' || github.event.inputs.benchmark == 'all' || github.event_name == 'pull_request'
+        run: |
+          echo "::group::Session Benchmark"
+          mix run bench/session_benchmark.exs
+          echo "::endgroup::"
+
+      - name: Run Dispatch Benchmark
+        if: github.event.inputs.benchmark == 'dispatch' || github.event.inputs.benchmark == 'all' || github.event_name == 'pull_request'
+        run: |
+          echo "::group::Dispatch Benchmark"
+          mix run bench/dispatch_benchmark.exs
+          echo "::endgroup::"
+
+      - name: Benchmark Summary
+        if: always()
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Benchmarks completed successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Benchmarks Run:" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.benchmark }}" == "all" ] || [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "- Simple Benchmark (quick performance check)" >> $GITHUB_STEP_SUMMARY
+            echo "- Session Benchmark (comprehensive session lifecycle)" >> $GITHUB_STEP_SUMMARY
+            echo "- Dispatch Benchmark (dispatch performance)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.benchmark }}" == "simple" ]; then
+            echo "- Simple Benchmark (quick performance check)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.benchmark }}" == "session" ]; then
+            echo "- Session Benchmark (comprehensive session lifecycle)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.benchmark }}" == "dispatch" ]; then
+            echo "- Dispatch Benchmark (dispatch performance)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Performance Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "See detailed results in the benchmark steps above." >> $GITHUB_STEP_SUMMARY

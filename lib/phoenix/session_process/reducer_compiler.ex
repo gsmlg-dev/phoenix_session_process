@@ -1,4 +1,4 @@
-defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
+defmodule Phoenix.SessionProcess.ReducerCompiler do
   @moduledoc """
   Compile-time support for reducer modules.
 
@@ -51,7 +51,7 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
     throttles = Enum.reverse(throttles)
     debounces = Enum.reverse(debounces)
 
-    # Validate name is set
+    # Validate name is set and is an atom
     unless name do
       raise CompileError,
         file: env.file,
@@ -73,6 +73,19 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
         """
     end
 
+    unless is_atom(name) do
+      raise CompileError,
+        file: env.file,
+        line: env.line,
+        description: """
+        Reducer @name must be an atom, got: #{inspect(name)}
+
+        Example:
+            @name :my_reducer  # Correct - atom
+            @name "my_reducer" # Wrong - string
+        """
+    end
+
     # Default action_prefix to name (convert atom to string), unless explicitly set
     # action_prefix can be nil or "" to indicate no prefix
     action_prefix =
@@ -84,6 +97,22 @@ defmodule Phoenix.SessionProcess.Redux.ReducerCompiler do
         # @action_prefix was explicitly set (could be nil, "", or a string)
         action_prefix
       end
+
+    # Validate action_prefix is binary (or nil/"" for no prefix)
+    unless is_nil(action_prefix) or action_prefix == "" or is_binary(action_prefix) do
+      raise CompileError,
+        file: env.file,
+        line: env.line,
+        description: """
+        Reducer @action_prefix must be a binary string, nil, or "", got: #{inspect(action_prefix)}
+
+        Examples:
+            @action_prefix "user"  # Correct - binary string
+            @action_prefix nil     # Correct - no prefix
+            @action_prefix ""      # Correct - no prefix
+            @action_prefix :user   # Wrong - atom
+        """
+    end
 
     quote do
       @doc """

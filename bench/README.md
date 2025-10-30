@@ -9,12 +9,16 @@ The benchmarking suite provides tools to measure:
 - Memory usage and efficiency
 - Concurrent operation throughput
 - Registry lookup performance
+- Redux Store dispatch performance (sync/async/concurrent)
+- State selector performance (client vs server-side)
+- Subscription notification performance
 - Error handling performance
 
 ## Files
 
 - **`simple_bench.exs`** - Quick performance test (5-10 seconds)
 - **`session_benchmark.exs`** - Comprehensive benchmark (30-60 seconds)
+- **`dispatch_benchmark.exs`** - Dispatch performance benchmark (30-45 seconds)
 - **`README.md`** - This documentation
 
 ## Usage
@@ -55,7 +59,51 @@ Run detailed performance analysis:
 mix run bench/session_benchmark.exs
 ```
 
+### Dispatch Performance Benchmark
+Run dispatch-specific performance tests:
+
+```bash
+mix run bench/dispatch_benchmark.exs
+```
+
 **Sample Output:**
+```
+🚀 Phoenix Session Process - Dispatch Performance Benchmark
+============================================================
+
+📊 1. Synchronous Dispatch Throughput
+----------------------------------------
+    100 dispatches:    8788.89 ops/sec  (avg: 0.114ms/op)
+    500 dispatches:   40936.63 ops/sec  (avg: 0.024ms/op)
+   5000 dispatches:  185185.19 ops/sec  (avg: 0.005ms/op)
+
+📊 2. Async Dispatch with Cancellation
+----------------------------------------
+    100 async dispatches:  211416.49 ops/sec  (avg: 0.005ms/op)
+   1000 async dispatches:  310848.62 ops/sec  (avg: 0.003ms/op)
+
+📊 3. Concurrent Dispatch Operations
+----------------------------------------
+   10 tasks × 100 dispatches:   18886.45 ops/sec
+  100 tasks × 100 dispatches:  141191.09 ops/sec
+
+📊 4. Dispatch with Active Subscriptions
+----------------------------------------
+   1 subscriptions:    1962.67 ops/sec
+  10 subscriptions:    1928.42 ops/sec
+
+📊 5. Action Type Performance Comparison
+----------------------------------------
+  No-op (no state change)       :    77627.7 ops/sec
+  Increment (state change)      :   66965.78 ops/sec
+
+📊 6. State Selector Performance
+----------------------------------------
+  Simple field access (client)       :  316866.82 ops/sec
+  Simple field access (server)       :  330076.58 ops/sec
+```
+
+### Comprehensive Session Benchmark Output
 ```
 🚀 Phoenix Session Process Benchmarking
 ==================================================
@@ -91,6 +139,63 @@ Created 1000 sessions in 89.7ms (11148.27 sessions/sec)
 
 ✅ Benchmarking Complete!
 ```
+
+## GitHub Actions Integration
+
+### Automated Benchmark Runs
+
+Benchmarks are automatically run on pull requests to ensure performance regressions are caught early.
+
+#### On Pull Requests
+All benchmarks run automatically when you create a pull request to `main` or `develop` branches:
+
+```yaml
+# Triggered automatically on PR
+- Simple Benchmark
+- Session Benchmark
+- Dispatch Benchmark
+```
+
+Results appear in the GitHub Actions workflow logs under the "Benchmark" workflow.
+
+#### Manual Trigger
+You can also manually trigger benchmarks from the GitHub Actions tab:
+
+1. Go to **Actions** tab in the repository
+2. Select **Benchmark** workflow from the left sidebar
+3. Click **Run workflow** button
+4. Choose which benchmark to run:
+   - **all** - Run all benchmarks (default)
+   - **simple** - Quick performance check only
+   - **session** - Comprehensive session lifecycle only
+   - **dispatch** - Dispatch performance only
+5. Click **Run workflow** to start
+
+#### Workflow Configuration
+The benchmark workflow is defined in `.github/workflows/benchmark.yml`:
+
+```yaml
+name: Benchmark
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        type: choice
+        options:
+          - all
+          - simple
+          - session
+          - dispatch
+```
+
+#### Viewing Results
+Benchmark results are displayed in:
+1. **Workflow logs**: Detailed output with all metrics
+2. **Step summary**: Quick overview of benchmarks run
+3. **PR comments**: (Optional) Can be configured to post results as PR comments
 
 ## Benchmark Metrics Explained
 

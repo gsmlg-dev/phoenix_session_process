@@ -112,8 +112,7 @@ config :phoenix_session_process,
   session_process: MyApp.SessionProcess,  # Default session module
   max_sessions: 10_000,                   # Maximum concurrent sessions
   session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
-  rate_limit: 100,                       # Sessions per minute limit
-  pubsub: MyApp.PubSub                   # PubSub module for LiveView integration
+  rate_limit: 100                        # Sessions per minute limit
 ```
 
 ## Usage Examples
@@ -143,59 +142,95 @@ defmodule MyApp.SessionProcess do
 end
 ```
 
-### Redux Store API (NEW in v0.6.0)
+### Redux Store API (v1.0.0)
 
-Phoenix.SessionProcess now includes built-in Redux functionality - **SessionProcess IS the Redux store**. No need to manage separate Redux structs or manual state updates.
+Phoenix.SessionProcess includes built-in Redux functionality - **SessionProcess IS the Redux store**. Use the `:reducer` macro to define reducers with binary action types.
 
-> **Note**: v1.0.0 is coming soon with enhanced reducer routing and action normalization. See CHANGELOG.md for details.
-
-#### Session Process as Redux Store
+#### Defining Reducers
 
 ```elixir
+defmodule MyApp.CounterReducer do
+  use Phoenix.SessionProcess, :reducer
+
+  @name :counter  # MUST be atom
+  @action_prefix "counter"  # MUST be binary
+
+  def init_state do
+    %{count: 0}
+  end
+
+  def handle_action(action, state) do
+    alias Phoenix.SessionProcess.Action
+
+    case action do
+      %Action{type: "counter.increment"} ->
+        %{state | count: state.count + 1}
+
+      %Action{type: "counter.set", payload: value} ->
+        %{state | count: value}
+
+      _ ->
+        state
+    end
+  end
+end
+
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
 
-  # Define your initial state
-  def user_init(_args) do
-    %{user: nil, count: 0, preferences: %{}}
+  def init_state(_args) do
+    %{}
+  end
+
+  def combined_reducers do
+    [MyApp.CounterReducer]
   end
 end
+```
 
+#### Using the Redux Store
+
+```elixir
 # In your controller:
 {:ok, _pid} = Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
 
-# Register a reducer
-reducer = fn action, state ->
-  case action do
-    {:set_user, user} -> %{state | user: user}
-    :increment -> %{state | count: state.count + 1}
-    _ -> state
-  end
-end
+# Dispatch actions (MUST use binary types)
+:ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
+:ok = Phoenix.SessionProcess.dispatch(session_id, "counter.set", 10)
 
-Phoenix.SessionProcess.register_reducer(session_id, :main, reducer)
-
-# Dispatch actions (all dispatches are async and return :ok)
-:ok = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123, name: "Alice"}})
-
-# Or use dispatch_async for clarity (same behavior)
-:ok = Phoenix.SessionProcess.dispatch_async(session_id, :increment)
-
-# Get state after dispatch
-state = Phoenix.SessionProcess.get_state(session_id)
-
-# Subscribe to state changes
-Phoenix.SessionProcess.subscribe(
+# Async dispatch returns cancellation function
+{:ok, cancel_fn} = Phoenix.SessionProcess.dispatch_async(
   session_id,
-  fn state -> state.user end,  # Selector function
-  :user_changed,               # Event name
-  self()                       # Subscriber PID
+  "counter.increment",
+  nil,
+  async: true
 )
 
-# Receive notifications when user changes
+# Get state (state is namespaced by reducer)
+state = Phoenix.SessionProcess.get_state(session_id)
+# => %{counter: %{count: 11}}
+
+# Use selectors
+count = Phoenix.SessionProcess.get_state(session_id, fn s -> s.counter.count end)
+
+# Server-side selection (more efficient for large states)
+count = Phoenix.SessionProcess.select_state(session_id, fn s -> s.counter.count end)
+
+# Subscribe to state changes
+{:ok, sub_id} = Phoenix.SessionProcess.subscribe(
+  session_id,
+  fn state -> state.counter.count end,  # Selector function
+  :count_changed,                        # Event name
+  self()                                 # Subscriber PID (optional)
+)
+
+# Receive notifications when count changes
 receive do
-  {:user_changed, user} -> IO.inspect(user, label: "User updated")
+  {:count_changed, new_count} -> IO.inspect(new_count, label: "Count")
 end
+
+# Unsubscribe
+:ok = Phoenix.SessionProcess.unsubscribe(session_id, sub_id)
 ```
 
 #### LiveView with Redux Store API
@@ -227,7 +262,7 @@ defmodule MyAppWeb.DashboardLive do
 
   # Dispatch actions
   def handle_event("increment", _params, socket) do
-    SessionProcess.dispatch(socket.assigns.session_id, :increment, async: true)
+    SessionProcess.dispatch(socket.assigns.session_id, "increment", nil, async: true)
     {:noreply, socket}
   end
 
@@ -252,7 +287,7 @@ end
 
 ### With LiveView Integration (Redux-Based) - **DEPRECATED**
 
-Phoenix.SessionProcess provides Redux-based LiveView integration for real-time state synchronization. All state updates go through Redux dispatch actions, which automatically handle PubSub broadcasting.
+Phoenix.SessionProcess provides Redux-based LiveView integration for real-time state synchronization.
 
 **This approach is deprecated** - use the Redux Store API (see above) instead.
 
@@ -265,11 +300,7 @@ defmodule MyApp.SessionProcess do
 
   @impl true
   def init(_init_arg) do
-    redux = Redux.init_state(
-      %{user: nil, count: 0},
-      pubsub: MyApp.PubSub,
-      pubsub_topic: "session:#{get_session_id()}:redux"
-    )
+    redux = Redux.init_state(%{user: nil, count: 0})
     {:ok, %{redux: redux}}
   end
 
@@ -310,7 +341,7 @@ defmodule MyAppWeb.DashboardLive do
 
   def mount(_params, %{"session_id" => session_id}, socket) do
     # Subscribe to Redux state and get initial state
-    case SessionLV.mount_session(socket, session_id, MyApp.PubSub) do
+    case SessionLV.mount_session(socket, session_id) do
       {:ok, socket, state} ->
         {:ok, assign(socket, state: state, session_id: session_id)}
 
@@ -326,7 +357,7 @@ defmodule MyAppWeb.DashboardLive do
 
   # Send messages to session
   def handle_event("increment", _params, socket) do
-    SessionLV.dispatch_async(socket.assigns.session_id, :increment)
+    SessionLV.dispatch_async(socket.assigns.session_id, "increment")
     {:noreply, socket}
   end
 
@@ -340,15 +371,7 @@ end
 
 #### Configuration for LiveView
 
-Add PubSub module to your config:
-
-```elixir
-# config/config.exs
-config :phoenix_session_process,
-  pubsub: MyApp.PubSub  # Required for LiveView integration
-```
-
-**Important**: LiveView integration requires Redux for state management. Redux automatically broadcasts state changes via PubSub when actions are dispatched.
+**Important**: LiveView integration requires Redux for state management.
 
 ## API Reference
 
@@ -405,33 +428,32 @@ defmodule MyApp.SessionProcess do
 end
 ```
 
-### Redux Store API (v0.6.0+)
+### Redux Store API (v1.0.0)
 
-The built-in Redux Store API provides state management with actions, reducers, and subscriptions:
+The built-in Redux Store API provides state management with reducers defined using the `:reducer` macro:
 
 ```elixir
-# Register a reducer (note: first parameter is action, second is state)
-reducer = fn action, state ->
-  case action do
-    {:set_user, user} -> %{state | user: user}
-    :increment -> %{state | count: state.count + 1}
-    _ -> state
-  end
-end
+# See "Redux Store API (v1.0.0)" section above for complete examples
 
-Phoenix.SessionProcess.register_reducer(session_id, :main_reducer, reducer)
+# Dispatch actions (MUST use binary types)
+:ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
 
-# Dispatch actions (all dispatches return :ok and are async)
-:ok = Phoenix.SessionProcess.dispatch(session_id, {:set_user, %{id: 123}})
-
-# Or use dispatch_async for clarity (same behavior)
-:ok = Phoenix.SessionProcess.dispatch_async(session_id, :increment)
+# Async dispatch returns cancellation function
+{:ok, cancel_fn} = Phoenix.SessionProcess.dispatch_async(
+  session_id,
+  "user.set",
+  %{id: 123},
+  async: true
+)
 
 # Get current state after dispatch
 state = Phoenix.SessionProcess.get_state(session_id)
 
-# Get state with selector
+# Get state with selector (client-side)
 user = Phoenix.SessionProcess.get_state(session_id, fn state -> state.user end)
+
+# Server-side selection (more efficient for large states)
+user = Phoenix.SessionProcess.select_state(session_id, fn state -> state.user end)
 
 # Subscribe to state changes (with selector)
 {:ok, sub_id} = Phoenix.SessionProcess.subscribe(
@@ -448,13 +470,6 @@ end
 
 # Unsubscribe
 :ok = Phoenix.SessionProcess.unsubscribe(session_id, sub_id)
-
-# Register a selector (for reusable derived state)
-user_name_selector = fn state -> state.user && state.user.name end
-:ok = Phoenix.SessionProcess.register_selector(session_id, :user_name, user_name_selector)
-
-# Use registered selector
-name = Phoenix.SessionProcess.select(session_id, :user_name)
 ```
 
 **Key Features:**
@@ -741,66 +756,12 @@ defmodule MyAppWeb.ShoppingCartLive do
 end
 ```
 
-#### Redux with PubSub (Distributed)
-
-Share state across nodes with Phoenix.PubSub:
-
-```elixir
-defmodule MyApp.DistributedSession do
-  use Phoenix.SessionProcess, :process
-  alias Phoenix.SessionProcess.Redux
-
-  @impl true
-  def init(arg) do
-    session_id = Keyword.get(arg, :session_id)
-
-    # Enable PubSub broadcasting
-    redux =
-      Redux.init_state(
-        %{data: %{}},
-        pubsub: MyApp.PubSub,
-        pubsub_topic: "session:\#{session_id}"
-      )
-
-    {:ok, %{redux: redux}}
-  end
-
-  @impl true
-  def handle_call({:dispatch, action}, _from, state) do
-    # Dispatch automatically broadcasts via PubSub
-    new_redux = Redux.dispatch(state.redux, action, &reducer/2)
-    {:reply, {:ok, Redux.get_state(new_redux)}, %{state | redux: new_redux}}
-  end
-
-  defp reducer(state, action) do
-    case action do
-      {:update, data} -> %{state | data: Map.merge(state.data, data)}
-      _ -> state
-    end
-  end
-end
-
-# Listen from any node
-defmodule MyApp.RemoteListener do
-  def listen(session_id) do
-    Redux.subscribe_to_broadcasts(
-      MyApp.PubSub,
-      "session:\#{session_id}",
-      fn %{action: action, state: state} ->
-        IO.inspect({action, state}, label: "Remote state change")
-      end
-    )
-  end
-end
-```
-
 **Redux Features:**
 - **Time-travel debugging** - Access complete action history
 - **Middleware support** - Add logging, validation, side effects
 - **Subscriptions** - React to specific state changes with callbacks
 - **Selectors with memoization** - Efficient derived state computation
 - **LiveView integration** - Automatic assign updates
-- **Phoenix.PubSub support** - Distributed state notifications across nodes
 - **State persistence** - Serialize and restore state
 - **Predictable updates** - All changes through explicit actions
 - **Comprehensive telemetry** - Monitor Redux operations
@@ -855,8 +816,6 @@ The library emits comprehensive telemetry events for monitoring and debugging:
 - `[:phoenix, :session_process, :redux, :notification]` - When subscriptions are notified
 - `[:phoenix, :session_process, :redux, :selector_cache_hit]` - When selector cache is hit
 - `[:phoenix, :session_process, :redux, :selector_cache_miss]` - When selector cache misses
-- `[:phoenix, :session_process, :redux, :pubsub_broadcast]` - When state is broadcast via PubSub
-- `[:phoenix, :session_process, :redux, :pubsub_receive]` - When PubSub broadcast is received
 
 ### Example Telemetry Setup
 
@@ -981,5 +940,4 @@ Created by [Jonathan Gao](https://github.com/gsmlg-dev)
 ## Related Projects
 
 - [Phoenix LiveView](https://hex.pm/packages/phoenix_live_view) - Real-time user experiences
-- [Phoenix PubSub](https://hex.pm/packages/phoenix_pubsub) - Distributed PubSub
 - [Phoenix Channels](https://hexdocs.pm/phoenix/channels.html) - Real-time communication

@@ -1,7 +1,7 @@
-defmodule Phoenix.SessionProcess.Redux.ActionRateLimiterTest do
+defmodule Phoenix.SessionProcess.ActionRateLimiterTest do
   use ExUnit.Case, async: true
 
-  alias Phoenix.SessionProcess.Redux.ActionRateLimiter
+  alias Phoenix.SessionProcess.ActionRateLimiter
 
   describe "parse_duration/1" do
     test "parses milliseconds" do

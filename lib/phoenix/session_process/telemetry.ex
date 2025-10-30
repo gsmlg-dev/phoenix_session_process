@@ -37,9 +37,6 @@ defmodule Phoenix.SessionProcess.Telemetry do
   - `[:phoenix, :session_process, :redux, :notification]` - When subscriptions are notified
   - `[:phoenix, :session_process, :redux, :selector_cache_hit]` - When selector cache is hit
   - `[:phoenix, :session_process, :redux, :selector_cache_miss]` - When selector cache misses
-  - `[:phoenix, :session_process, :redux, :pubsub_broadcast]` - When state is broadcast via PubSub
-  - `[:phoenix, :session_process, :redux, :pubsub_receive]` - When PubSub broadcast is received
-
   All events include the following metadata:
   - `session_id` - The session ID (when applicable)
   - `module` - The session module
@@ -350,27 +347,4 @@ defmodule Phoenix.SessionProcess.Telemetry do
     )
   end
 
-  @doc """
-  Emits a telemetry event for Redux PubSub broadcast.
-  """
-  @spec emit_redux_pubsub_broadcast(String.t(), any(), keyword()) :: :ok
-  def emit_redux_pubsub_broadcast(topic, action, measurements \\ []) do
-    :telemetry.execute(
-      [:phoenix, :session_process, :redux, :pubsub_broadcast],
-      Map.new(measurements),
-      %{topic: topic, action: action}
-    )
-  end
-
-  @doc """
-  Emits a telemetry event for Redux PubSub message receive.
-  """
-  @spec emit_redux_pubsub_receive(String.t(), any(), keyword()) :: :ok
-  def emit_redux_pubsub_receive(topic, action, measurements \\ []) do
-    :telemetry.execute(
-      [:phoenix, :session_process, :redux, :pubsub_receive],
-      Map.new(measurements),
-      %{topic: topic, action: action}
-    )
-  end
 end

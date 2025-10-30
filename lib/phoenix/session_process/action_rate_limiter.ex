@@ -1,4 +1,4 @@
-defmodule Phoenix.SessionProcess.Redux.ActionRateLimiter do
+defmodule Phoenix.SessionProcess.ActionRateLimiter do
   @moduledoc """
   Rate limiting for Redux actions via throttle and debounce.
 
@@ -249,7 +249,7 @@ defmodule Phoenix.SessionProcess.Redux.ActionRateLimiter do
     end)
   end
 
-  defp get_action_pattern(%Phoenix.SessionProcess.Redux.Action{type: type}), do: type
+  defp get_action_pattern(%Phoenix.SessionProcess.Action{type: type}), do: type
   defp get_action_pattern(%{type: type}), do: type
   defp get_action_pattern(action) when is_atom(action), do: action
   defp get_action_pattern({action, _}), do: action
