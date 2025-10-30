@@ -51,6 +51,7 @@ defmodule BenchReducer do
         Task.async(fn ->
           dispatch.("bench.increment")
         end)
+
         fn -> :ok end
 
       _ ->
@@ -84,17 +85,22 @@ IO.puts(String.duplicate("-", 40))
 iterations = [100, 500, 1000, 5000]
 
 Enum.each(iterations, fn count ->
-  {time, _} = :timer.tc(fn ->
-    Enum.each(1..count, fn _ ->
-      :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+  {time, _} =
+    :timer.tc(fn ->
+      Enum.each(1..count, fn _ ->
+        :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+      end)
+
+      # Allow dispatches to complete
+      Process.sleep(10)
     end)
-    Process.sleep(10)  # Allow dispatches to complete
-  end)
 
   rate = Float.round(count / (time / 1_000_000), 2)
   avg_time = Float.round(time / count / 1000, 3)
 
-  IO.puts("  #{String.pad_leading(to_string(count), 5)} dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec  (avg: #{avg_time}ms/op)")
+  IO.puts(
+    "  #{String.pad_leading(to_string(count), 5)} dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec  (avg: #{avg_time}ms/op)"
+  )
 end)
 
 # Reset state
@@ -106,23 +112,28 @@ IO.puts("\n📊 2. Async Dispatch with Cancellation")
 IO.puts(String.duplicate("-", 40))
 
 Enum.each([100, 500, 1000], fn count ->
-  {time, results} = :timer.tc(fn ->
-    Enum.map(1..count, fn _ ->
-      Phoenix.SessionProcess.dispatch_async(session_id, "bench.increment", nil, async: true)
+  {time, results} =
+    :timer.tc(fn ->
+      Enum.map(1..count, fn _ ->
+        Phoenix.SessionProcess.dispatch_async(session_id, "bench.increment", nil, async: true)
+      end)
     end)
-  end)
 
-  success_count = Enum.count(results, fn
-    {:ok, _cancel_fn} -> true
-    _ -> false
-  end)
+  success_count =
+    Enum.count(results, fn
+      {:ok, _cancel_fn} -> true
+      _ -> false
+    end)
 
   rate = Float.round(success_count / (time / 1_000_000), 2)
   avg_time = Float.round(time / count / 1000, 3)
 
-  IO.puts("  #{String.pad_leading(to_string(count), 5)} async dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec  (avg: #{avg_time}ms/op)")
+  IO.puts(
+    "  #{String.pad_leading(to_string(count), 5)} async dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec  (avg: #{avg_time}ms/op)"
+  )
 
-  Process.sleep(50)  # Allow async tasks to complete
+  # Allow async tasks to complete
+  Process.sleep(50)
 end)
 
 # Reset state
@@ -139,22 +150,27 @@ Enum.each(concurrent_tasks, fn task_count ->
   dispatches_per_task = 100
   total_dispatches = task_count * dispatches_per_task
 
-  {time, _} = :timer.tc(fn ->
-    tasks = Enum.map(1..task_count, fn _ ->
-      Task.async(fn ->
-        Enum.each(1..dispatches_per_task, fn _ ->
-          :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+  {time, _} =
+    :timer.tc(fn ->
+      tasks =
+        Enum.map(1..task_count, fn _ ->
+          Task.async(fn ->
+            Enum.each(1..dispatches_per_task, fn _ ->
+              :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+            end)
+          end)
         end)
-      end)
-    end)
 
-    Task.await_many(tasks, 30_000)
-    Process.sleep(50)  # Allow all dispatches to complete
-  end)
+      Task.await_many(tasks, 30_000)
+      # Allow all dispatches to complete
+      Process.sleep(50)
+    end)
 
   rate = Float.round(total_dispatches / (time / 1_000_000), 2)
 
-  IO.puts("  #{String.pad_leading(to_string(task_count), 3)} tasks × #{dispatches_per_task} dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec")
+  IO.puts(
+    "  #{String.pad_leading(to_string(task_count), 3)} tasks × #{dispatches_per_task} dispatches: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec"
+  )
 end)
 
 # Verify final count
@@ -175,49 +191,57 @@ subscription_counts = [1, 5, 10]
 
 Enum.each(subscription_counts, fn sub_count ->
   # Subscribe multiple times
-  sub_ids = Enum.map(1..sub_count, fn i ->
-    event_name = :"counter_changed_#{i}"
-    {:ok, sub_id} = Phoenix.SessionProcess.subscribe(
-      session_id,
-      fn state -> state.bench.counter end,
-      event_name
-    )
+  sub_ids =
+    Enum.map(1..sub_count, fn i ->
+      event_name = :"counter_changed_#{i}"
 
-    # Clear initial notification
-    receive do
-      {^event_name, _} -> :ok
-    after
-      100 -> :ok
-    end
+      {:ok, sub_id} =
+        Phoenix.SessionProcess.subscribe(
+          session_id,
+          fn state -> state.bench.counter end,
+          event_name
+        )
 
-    sub_id
-  end)
+      # Clear initial notification
+      receive do
+        {^event_name, _} -> :ok
+      after
+        100 -> :ok
+      end
+
+      sub_id
+    end)
 
   # Benchmark dispatches with subscriptions
   dispatch_count = 100
 
-  {time, _} = :timer.tc(fn ->
-    Enum.each(1..dispatch_count, fn _ ->
-      :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+  {time, _} =
+    :timer.tc(fn ->
+      Enum.each(1..dispatch_count, fn _ ->
+        :ok = Phoenix.SessionProcess.dispatch(session_id, "bench.increment")
+      end)
+
+      # Allow notifications to be sent
+      Process.sleep(50)
     end)
-    Process.sleep(50)  # Allow notifications to be sent
-  end)
 
   rate = Float.round(dispatch_count / (time / 1_000_000), 2)
 
-  IO.puts("  #{String.pad_leading(to_string(sub_count), 2)} subscriptions: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec")
+  IO.puts(
+    "  #{String.pad_leading(to_string(sub_count), 2)} subscriptions: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec"
+  )
 
   # Clear notification queue
   :timer.sleep(10)
 
   # Flush any remaining messages
   (fn flush ->
-    receive do
-      _ -> flush.(flush)
-    after
-      0 -> :ok
-    end
-  end).(fn f ->
+     receive do
+       _ -> flush.(flush)
+     after
+       0 -> :ok
+     end
+   end).(fn f ->
     receive do
       _ -> f.(f)
     after
@@ -248,27 +272,39 @@ action_types = [
 Enum.each(action_types, fn
   {label, action_type} ->
     count = 1000
-    {time, _} = :timer.tc(fn ->
-      Enum.each(1..count, fn _ ->
-        :ok = Phoenix.SessionProcess.dispatch(session_id, action_type)
+
+    {time, _} =
+      :timer.tc(fn ->
+        Enum.each(1..count, fn _ ->
+          :ok = Phoenix.SessionProcess.dispatch(session_id, action_type)
+        end)
+
+        Process.sleep(10)
       end)
-      Process.sleep(10)
-    end)
 
     rate = Float.round(count / (time / 1_000_000), 2)
-    IO.puts("  #{String.pad_trailing(label, 30)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec")
+
+    IO.puts(
+      "  #{String.pad_trailing(label, 30)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec"
+    )
 
   {label, action_type, payload} ->
     count = 1000
-    {time, _} = :timer.tc(fn ->
-      Enum.each(1..count, fn _ ->
-        :ok = Phoenix.SessionProcess.dispatch(session_id, action_type, payload)
+
+    {time, _} =
+      :timer.tc(fn ->
+        Enum.each(1..count, fn _ ->
+          :ok = Phoenix.SessionProcess.dispatch(session_id, action_type, payload)
+        end)
+
+        Process.sleep(10)
       end)
-      Process.sleep(10)
-    end)
 
     rate = Float.round(count / (time / 1_000_000), 2)
-    IO.puts("  #{String.pad_trailing(label, 30)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec")
+
+    IO.puts(
+      "  #{String.pad_trailing(label, 30)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec"
+    )
 end)
 
 # Benchmark 6: State Selector Performance
@@ -289,24 +325,32 @@ Enum.each(selectors, fn {label, selector} ->
   count = 10000
 
   # Client-side selection
-  {time, _} = :timer.tc(fn ->
-    Enum.each(1..count, fn _ ->
-      _result = Phoenix.SessionProcess.get_state(session_id, selector)
+  {time, _} =
+    :timer.tc(fn ->
+      Enum.each(1..count, fn _ ->
+        _result = Phoenix.SessionProcess.get_state(session_id, selector)
+      end)
     end)
-  end)
 
   rate = Float.round(count / (time / 1_000_000), 2)
-  IO.puts("  #{String.pad_trailing(label <> " (client)", 35)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec")
+
+  IO.puts(
+    "  #{String.pad_trailing(label <> " (client)", 35)}: #{String.pad_leading(Float.to_string(rate), 10)} ops/sec"
+  )
 
   # Server-side selection
-  {time2, _} = :timer.tc(fn ->
-    Enum.each(1..count, fn _ ->
-      _result = Phoenix.SessionProcess.select_state(session_id, selector)
+  {time2, _} =
+    :timer.tc(fn ->
+      Enum.each(1..count, fn _ ->
+        _result = Phoenix.SessionProcess.select_state(session_id, selector)
+      end)
     end)
-  end)
 
   rate2 = Float.round(count / (time2 / 1_000_000), 2)
-  IO.puts("  #{String.pad_trailing(label <> " (server)", 35)}: #{String.pad_leading(Float.to_string(rate2), 10)} ops/sec")
+
+  IO.puts(
+    "  #{String.pad_trailing(label <> " (server)", 35)}: #{String.pad_leading(Float.to_string(rate2), 10)} ops/sec"
+  )
 end)
 
 # Summary

@@ -55,7 +55,8 @@ IO.puts("\n3. Using asynchronous casts...")
 :ok = Phoenix.SessionProcess.cast(session_id, :increment_visits)
 :ok = Phoenix.SessionProcess.cast(session_id, :increment_visits)
 :ok = Phoenix.SessionProcess.cast(session_id, {:store_data, :user_name, "Alice"})
-Process.sleep(10)  # Wait for casts to process
+# Wait for casts to process
+Process.sleep(10)
 
 # Get updated state
 visits = Phoenix.SessionProcess.call(session_id, :get_visits)

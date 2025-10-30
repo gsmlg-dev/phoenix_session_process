@@ -47,15 +47,16 @@ defmodule AsyncReducer do
     case action do
       %Action{type: "data.fetch", payload: delay_ms} ->
         # Start async task
-        task = Task.async(fn ->
-          # Simulate loading
-          dispatch.("data.loading")
-          Process.sleep(delay_ms)
+        task =
+          Task.async(fn ->
+            # Simulate loading
+            dispatch.("data.loading")
+            Process.sleep(delay_ms)
 
-          # Simulate fetching data
-          items = ["item1", "item2", "item3"]
-          dispatch.("data.loaded", items)
-        end)
+            # Simulate fetching data
+            items = ["item1", "item2", "item3"]
+            dispatch.("data.loaded", items)
+          end)
 
         # Return cancellation callback
         fn ->
@@ -92,11 +93,13 @@ IO.puts("   ✓ Session started: #{session_id}")
 
 # Subscribe to loading state
 IO.puts("\n2. Subscribing to state changes...")
-{:ok, sub_id} = Phoenix.SessionProcess.subscribe(
-  session_id,
-  fn state -> {state.data.loading, length(state.data.items)} end,
-  :state_changed
-)
+
+{:ok, sub_id} =
+  Phoenix.SessionProcess.subscribe(
+    session_id,
+    fn state -> {state.data.loading, length(state.data.items)} end,
+    :state_changed
+  )
 
 # Receive initial value
 receive do
@@ -106,12 +109,15 @@ end
 
 # Dispatch async action
 IO.puts("\n3. Dispatching async fetch (1000ms delay)...")
-{:ok, cancel_fn} = Phoenix.SessionProcess.dispatch_async(
-  session_id,
-  "data.fetch",
-  1000,
-  async: true
-)
+
+{:ok, cancel_fn} =
+  Phoenix.SessionProcess.dispatch_async(
+    session_id,
+    "data.fetch",
+    1000,
+    async: true
+  )
+
 IO.puts("   ✓ Async dispatch started")
 IO.puts("   ✓ Received cancellation function")
 
@@ -135,12 +141,14 @@ end
 
 # Test cancellation
 IO.puts("\n4. Testing cancellation...")
-{:ok, cancel_fn2} = Phoenix.SessionProcess.dispatch_async(
-  session_id,
-  "data.fetch",
-  2000,
-  async: true
-)
+
+{:ok, cancel_fn2} =
+  Phoenix.SessionProcess.dispatch_async(
+    session_id,
+    "data.fetch",
+    2000,
+    async: true
+  )
 
 # Wait a bit
 Process.sleep(100)

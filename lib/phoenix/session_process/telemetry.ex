@@ -346,5 +346,4 @@ defmodule Phoenix.SessionProcess.Telemetry do
       %{cache_key: cache_key}
     )
   end
-
 end

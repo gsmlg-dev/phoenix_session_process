@@ -121,9 +121,11 @@ IO.puts("\n5. Using selectors...")
 count = Phoenix.SessionProcess.get_state(session_id, fn s -> s.counter.count end)
 IO.puts("   • Count (client-side selector): #{count}")
 
-user_name = Phoenix.SessionProcess.get_state(session_id, fn s ->
-  if s.user.current_user, do: s.user.current_user.name, else: nil
-end)
+user_name =
+  Phoenix.SessionProcess.get_state(session_id, fn s ->
+    if s.user.current_user, do: s.user.current_user.name, else: nil
+  end)
+
 IO.puts("   • User name: #{user_name}")
 
 # Server-side selection (more efficient for large states)
@@ -133,11 +135,13 @@ IO.puts("   • Count (server-side): #{server_count}")
 
 # Subscribe to state changes
 IO.puts("\n7. Subscribing to counter changes...")
-{:ok, sub_id} = Phoenix.SessionProcess.subscribe(
-  session_id,
-  fn state -> state.counter.count end,
-  :count_changed
-)
+
+{:ok, sub_id} =
+  Phoenix.SessionProcess.subscribe(
+    session_id,
+    fn state -> state.counter.count end,
+    :count_changed
+  )
 
 # Receive initial value
 receive do
