@@ -1599,11 +1599,17 @@ defmodule Phoenix.SessionProcess do
 
       # Strip action prefix before passing to reducer if reducer has a prefix
       defp strip_action_prefix(action, reducer_prefix, skip_strip \\ false) do
-        if skip_strip do
-          # When using meta.reducers for explicit targeting, don't strip prefix
-          action
-        else
-          if reducer_prefix && reducer_prefix != "" do
+        # When using meta.reducers for explicit targeting, don't strip prefix
+        cond do
+          skip_strip ->
+            action
+
+          is_nil(reducer_prefix) or reducer_prefix == "" ->
+            # No prefix or catch-all reducer, pass unchanged
+            action
+
+          true ->
+            # Try to strip matching prefix
             case String.split(action.type, ".", parts: 2) do
               [^reducer_prefix, local_type] ->
                 %{action | type: local_type}
@@ -1612,10 +1618,6 @@ defmodule Phoenix.SessionProcess do
                 # Prefix doesn't match, keep as-is
                 action
             end
-          else
-            # No prefix or catch-all reducer, pass unchanged
-            action
-          end
         end
       end
 
