@@ -23,16 +23,16 @@ defmodule AsyncReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "data.loading"} ->
+      %Action{type: "loading"} ->
         %{state | loading: true, error: nil}
 
-      %Action{type: "data.loaded", payload: items} ->
+      %Action{type: "loaded", payload: items} ->
         %{state | items: items, loading: false}
 
-      %Action{type: "data.error", payload: error} ->
+      %Action{type: "error", payload: error} ->
         %{state | error: error, loading: false}
 
-      %Action{type: "data.clear"} ->
+      %Action{type: "clear"} ->
         %{state | items: [], loading: false, error: nil}
 
       _ ->
@@ -45,7 +45,7 @@ defmodule AsyncReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "data.fetch", payload: delay_ms} ->
+      %Action{type: "fetch", payload: delay_ms} ->
         # Start async task
         task =
           Task.async(fn ->

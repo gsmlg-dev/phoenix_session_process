@@ -163,10 +163,10 @@ defmodule MyApp.CounterReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "counter.increment"} ->
+      %Action{type: "increment"} ->
         %{state | count: state.count + 1}
 
-      %Action{type: "counter.set", payload: value} ->
+      %Action{type: "set", payload: value} ->
         %{state | count: value}
 
       _ ->

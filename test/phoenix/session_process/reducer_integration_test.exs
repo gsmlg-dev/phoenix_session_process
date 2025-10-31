@@ -20,10 +20,6 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       Map.update(state, :fetch_count, 1, &(&1 + 1))
     end
 
-    def handle_action(%Action{type: "user.fetch-users"}, state) do
-      Map.update(state, :fetch_count, 1, &(&1 + 1))
-    end
-
     @debounce {"search-users", "50ms"}
     def handle_action(%Action{type: "search-users", payload: query}, state) do
       Map.put(state, :search_query, query)
@@ -53,11 +49,6 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
     end
 
     def handle_action(%Action{type: "clear-cart"}, state) do
-      Map.put(state, :items, [])
-    end
-
-    # Also match with prefix for routing tests
-    def handle_action(%Action{type: "cart.clear-cart"}, state) do
       Map.put(state, :items, [])
     end
 
@@ -1172,12 +1163,14 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "routing_custom_prefix_#{:rand.uniform(1_000_000)}"
       {:ok, _pid} = SessionProcess.start(session_id, CustomPrefixSession)
 
-      # Action with "ship.calculate" should route to ShippingReducer
-      SessionProcess.dispatch(session_id, "ship.calculate-shipping", payload: "123 Main St")
+      # Action with "ship.calculate-shipping" should route to ShippingReducer
+      # After prefix stripping, becomes "calculate-shipping" which matches the handler
+      SessionProcess.dispatch(session_id, "ship.calculate-shipping", "123 Main St")
 
       state = SessionProcess.get_state(session_id)
-      # ShippingReducer doesn't handle this action, but it was routed correctly
-      assert state.shipping.address == nil
+      # ShippingReducer now handles this action with stripped prefix
+      assert state.shipping.address == "123 Main St"
+      assert state.shipping.cost == 10
 
       SessionProcess.terminate(session_id)
     end

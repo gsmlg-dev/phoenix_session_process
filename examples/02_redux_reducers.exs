@@ -24,13 +24,13 @@ defmodule CounterReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "counter.increment"} ->
+      %Action{type: "increment"} ->
         %{state | count: state.count + 1}
 
-      %Action{type: "counter.decrement"} ->
+      %Action{type: "decrement"} ->
         %{state | count: state.count - 1}
 
-      %Action{type: "counter.set", payload: value} ->
+      %Action{type: "set", payload: value} ->
         %{state | count: value}
 
       _ ->
@@ -54,10 +54,10 @@ defmodule UserReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "user.login", payload: user} ->
+      %Action{type: "login", payload: user} ->
         %{state | current_user: user, logged_in: true}
 
-      %Action{type: "user.logout"} ->
+      %Action{type: "logout"} ->
         %{state | current_user: nil, logged_in: false}
 
       _ ->

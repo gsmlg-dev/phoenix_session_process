@@ -51,6 +51,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Use the Redux Store API (built into SessionProcess) instead
   - See migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
 
+- **Action prefix stripping in reducers**
+  - Reducers with `@action_prefix` now receive action types with the prefix stripped
+  - When a reducer has `@action_prefix "counter"`, `handle_action` receives `"increment"` instead of `"counter.increment"`
+  - Dispatch calls still use full prefixed names (e.g., `dispatch(id, "counter.increment")`)
+  - Catch-all reducers (prefix `nil` or `""`) receive unchanged action types
+  - Migration:
+    ```elixir
+    # Before (v0.x)
+    defmodule CounterReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :counter
+      @action_prefix "counter"
+
+      def handle_action(%Action{type: "counter.increment"}, state) do
+        %{state | count: state.count + 1}
+      end
+    end
+
+    # After (v1.0.0)
+    defmodule CounterReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :counter
+      @action_prefix "counter"
+
+      def handle_action(%Action{type: "increment"}, state) do
+        %{state | count: state.count + 1}
+      end
+    end
+
+    # Dispatch calls remain unchanged
+    dispatch(session_id, "counter.increment")
+    ```
+
 ### Added
 
 - **`dispatch_async/3` function for explicit async dispatch**
@@ -72,12 +105,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    - Replace with `@action_prefix`
    - No logic changes required
 
-2. **Update dispatch call sites to handle `:ok` return value**
+2. **Update action type patterns in handle_action/handle_async**
+   - Remove the prefix from action type patterns
+   - Example: `"counter.increment"` becomes `"increment"`
+   - Dispatch calls remain unchanged (still use full prefixed names)
+   - Only affects reducers with non-nil/non-empty `@action_prefix`
+
+3. **Update dispatch call sites to handle `:ok` return value**
    - Replace `{:ok, state} = dispatch(...)` with `:ok = dispatch(...)`
    - Add `get_state(session_id)` calls where you need the updated state
    - Consider: Do you actually need the state? Many dispatches are fire-and-forget
 
-3. **Remove uses of deprecated Redux module**
+4. **Remove uses of deprecated Redux module**
    - If using `Phoenix.SessionProcess.Redux` struct-based API
    - Migrate to Redux Store API (SessionProcess IS the store)
    - See `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed migration

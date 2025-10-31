@@ -1520,12 +1520,33 @@ defmodule Phoenix.SessionProcess do
         Map.put(state, slice_key, slice_initial_state)
       end
 
+      # Strip action prefix before passing to reducer if reducer has a prefix
+      defp strip_action_prefix(action, reducer_prefix) do
+        if reducer_prefix && reducer_prefix != "" do
+          case String.split(action.type, ".", parts: 2) do
+            [^reducer_prefix, local_type] ->
+              %{action | type: local_type}
+
+            _ ->
+              # Prefix doesn't match, keep as-is
+              action
+          end
+        else
+          # No prefix or catch-all reducer, pass unchanged
+          action
+        end
+      end
+
       # credo:disable-for-lines:60 Credo.Check.Refactor.Nesting
       defp apply_combined_reducer(module, action, slice_key, app_state, internal_state) do
         alias Phoenix.SessionProcess.ActionRateLimiter
 
         # Get the state slice for this reducer
         slice_state = Map.get(app_state, slice_key, %{})
+
+        # Get reducer's action prefix and strip it from action type
+        reducer_prefix = module.__reducer_action_prefix__()
+        local_action = strip_action_prefix(action, reducer_prefix)
 
         # Check throttle first
         if ActionRateLimiter.should_throttle?(module, action, internal_state) do
@@ -1551,7 +1572,8 @@ defmodule Phoenix.SessionProcess do
                 dispatch_fn = &__async_dispatch__(session_pid, &1, &2, &3)
 
                 # handle_async returns cancel function, not state
-                cancel_fn = module.handle_async(action, dispatch_fn, slice_state)
+                # Pass local_action with stripped prefix
+                cancel_fn = module.handle_async(local_action, dispatch_fn, slice_state)
 
                 # Store cancel function in internal state if action has cancel_ref
                 new_internal_with_cancel =
@@ -1569,7 +1591,8 @@ defmodule Phoenix.SessionProcess do
                 {slice_state, new_internal_with_cancel}
               else
                 # Synchronous action updates state
-                new_state = module.handle_action(action, slice_state)
+                # Pass local_action with stripped prefix
+                new_state = module.handle_action(local_action, slice_state)
                 {new_state, internal_state}
               end
 

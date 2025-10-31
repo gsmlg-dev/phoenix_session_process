@@ -323,10 +323,10 @@ defmodule MyApp.CounterReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "counter.increment"} ->
+      %Action{type: "increment"} ->
         %{state | count: state.count + 1}
 
-      %Action{type: "counter.set", payload: value} ->
+      %Action{type: "set", payload: value} ->
         %{state | count: value}
 
       _ ->
@@ -349,10 +349,10 @@ defmodule MyApp.UserReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "user.set", payload: user} ->
+      %Action{type: "set", payload: user} ->
         %{state | current_user: user}
 
-      %Action{type: "user.update_preferences", payload: prefs} ->
+      %Action{type: "update_preferences", payload: prefs} ->
         %{state | preferences: Map.merge(state.preferences, prefs)}
 
       _ ->
@@ -365,7 +365,7 @@ defmodule MyApp.UserReducer do
     alias Phoenix.SessionProcess.Action
 
     case action do
-      %Action{type: "user.fetch", payload: user_id} ->
+      %Action{type: "fetch", payload: user_id} ->
         task = Task.async(fn ->
           user = MyApp.Users.get(user_id)
           # dispatch signature: dispatch(type, payload \\ nil, meta \\ [])
