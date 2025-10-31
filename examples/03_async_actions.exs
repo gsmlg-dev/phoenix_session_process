@@ -50,12 +50,12 @@ defmodule AsyncReducer do
         task =
           Task.async(fn ->
             # Simulate loading
-            dispatch.("data.loading")
+            dispatch.("data.loading", nil, [])
             Process.sleep(delay_ms)
 
             # Simulate fetching data
             items = ["item1", "item2", "item3"]
-            dispatch.("data.loaded", items)
+            dispatch.("data.loaded", items, [])
           end)
 
         # Return cancellation callback
@@ -107,19 +107,12 @@ receive do
     IO.puts("   • Initial state: loading=#{loading}, items=#{count}")
 end
 
-# Dispatch async action
+# Dispatch async action (dispatch_async automatically adds async: true)
 IO.puts("\n3. Dispatching async fetch (1000ms delay)...")
 
-{:ok, cancel_fn} =
-  Phoenix.SessionProcess.dispatch_async(
-    session_id,
-    "data.fetch",
-    1000,
-    async: true
-  )
+:ok = Phoenix.SessionProcess.dispatch_async(session_id, "data.fetch", 1000)
 
-IO.puts("   ✓ Async dispatch started")
-IO.puts("   ✓ Received cancellation function")
+IO.puts("   ✓ Async dispatch started (fire-and-forget)")
 
 # Receive loading notification
 receive do
@@ -142,28 +135,21 @@ end
 # Test cancellation
 IO.puts("\n4. Testing cancellation...")
 
-{:ok, cancel_fn2} =
-  Phoenix.SessionProcess.dispatch_async(
-    session_id,
-    "data.fetch",
-    2000,
-    async: true
-  )
+:ok = Phoenix.SessionProcess.dispatch_async(session_id, "data.fetch", 50)
 
-# Wait a bit
+IO.puts("   • dispatch_async returns :ok (fire-and-forget)")
+IO.puts("   • Cancellation is handled internally by handle_async/3 callback")
+IO.puts("   • The cancel function is for internal lifecycle management only")
+
+# Wait for completion
 Process.sleep(100)
 
-# Cancel the task
-IO.puts("   • Calling cancellation function...")
-:ok = cancel_fn2.()
-
-# Should not receive completion
 receive do
-  {:state_changed, _} ->
-    IO.puts("   ⚠️  Received notification (task might have completed before cancel)")
+  {:state_changed, {loading, count}} ->
+    IO.puts("   ✓ Received notification: loading=#{loading}, items=#{count}")
 after
-  1000 ->
-    IO.puts("   ✓ No notification received (task was cancelled)")
+  200 ->
+    IO.puts("   • No notification (already processed)")
 end
 
 # Get final state

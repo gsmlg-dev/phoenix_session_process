@@ -37,7 +37,7 @@ Add `phoenix_session_process` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_session_process, "~> 0.4.0"}
+    {:phoenix_session_process, "~> 1.0"}
   ]
 end
 ```
@@ -198,13 +198,11 @@ end
 :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
 :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.set", 10)
 
-# Async dispatch returns cancellation function
-{:ok, cancel_fn} = Phoenix.SessionProcess.dispatch_async(
-  session_id,
-  "counter.increment",
-  nil,
-  async: true
-)
+# Async dispatch (convenience - automatically adds async: true)
+:ok = Phoenix.SessionProcess.dispatch_async(session_id, "counter.increment")
+
+# Equivalent to:
+# :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment", nil, async: true)
 
 # Get state (state is namespaced by reducer)
 state = Phoenix.SessionProcess.get_state(session_id)
@@ -438,12 +436,11 @@ The built-in Redux Store API provides state management with reducers defined usi
 # Dispatch actions (MUST use binary types)
 :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
 
-# Async dispatch returns cancellation function
-{:ok, cancel_fn} = Phoenix.SessionProcess.dispatch_async(
+# Async dispatch (convenience alias)
+:ok = Phoenix.SessionProcess.dispatch_async(
   session_id,
   "user.set",
-  %{id: 123},
-  async: true
+  %{id: 123}
 )
 
 # Get current state after dispatch

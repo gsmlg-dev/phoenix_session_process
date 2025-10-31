@@ -100,30 +100,29 @@ defmodule Phoenix.SessionProcess.DispatchTest do
       assert state2.test_reducer.count == 10
     end
 
-    test "dispatch_async returns {:ok, cancel_fn}", %{session_id: session_id} do
+    test "dispatch_async returns :ok (convenience alias)", %{session_id: session_id} do
       result = SessionProcess.dispatch_async(session_id, "increment")
-      assert {:ok, cancel_fn} = result
-      assert is_function(cancel_fn, 0)
+      assert :ok = result
 
-      # Wait a bit for async processing
-      Process.sleep(10)
+      # Wait for async processing (cast is asynchronous)
+      Process.sleep(50)
 
       # Verify state changed
       state = SessionProcess.get_state(session_id)
       assert state.test_reducer.count == 1
     end
 
-    test "dispatch_async returns cancellation function", %{session_id: session_id} do
-      # Dispatch async action
-      {:ok, cancel_fn} = SessionProcess.dispatch_async(session_id, "increment")
+    test "dispatch_async is equivalent to dispatch with async: true", %{session_id: session_id} do
+      # These two should be equivalent
+      :ok = SessionProcess.dispatch_async(session_id, "increment")
+      :ok = SessionProcess.dispatch(session_id, "increment", nil, async: true)
 
-      # Cancellation function can be called (best-effort cancellation)
-      assert :ok = cancel_fn.()
+      # Wait for async processing (cast is asynchronous)
+      Process.sleep(50)
 
-      # Note: Due to race conditions, we can't reliably test that the action
-      # was actually cancelled. The cancel is best-effort - if the action
-      # has already been processed before the cancel message arrives, it won't be cancelled.
-      # This test just verifies that the cancel function works without errors.
+      # Verify both actions were processed
+      state = SessionProcess.get_state(session_id)
+      assert state.test_reducer.count == 2
     end
 
     test "dispatch to non-existent session returns error", %{} do

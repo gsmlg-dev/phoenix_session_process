@@ -99,7 +99,7 @@ The library is organized into several logical groups:
 
    **Redux Store API (v1.0.0)** - SessionProcess IS the Redux store:
    - `dispatch/4` - Dispatch actions: `dispatch(session_id, type, payload \\ nil, meta \\ [])`
-   - `dispatch_async/4` - Async dispatch returning cancellation: `{:ok, cancel_fn}`
+   - `dispatch_async/4` - Convenience alias: `dispatch(id, type, payload, [meta | async: true])`
    - `subscribe/4` - Subscribe with selector
    - `unsubscribe/2` - Remove subscription
    - `get_state/1-2` - Get state (client-side, with optional selector)
@@ -266,8 +266,8 @@ The library is organized into several logical groups:
     - `type`: binary string (required)
     - `payload`: any term (defaults to nil)
     - `meta`: keyword list (defaults to [])
-  - `dispatch_async/4` returns `{:ok, cancel_fn}` where cancel_fn is `(() -> :ok)`
-  - `handle_async/3` MUST return cancellation callback `(() -> any())`
+  - `dispatch_async/4` is an alias for `dispatch(id, type, payload, [meta | async: true])`
+  - `handle_async/3` MUST return cancellation callback `(() -> any())` for internal use
 
 - **LiveView Integration**:
   - Use `Phoenix.SessionProcess.LiveView.mount_store/4` for direct subscriptions
@@ -446,13 +446,11 @@ defmodule MyAppWeb.PageController do
     :ok = SessionProcess.dispatch(session_id, "counter.increment")
     :ok = SessionProcess.dispatch(session_id, "user.set", %{id: 1, name: "Alice"})
 
-    # Async dispatch with cancellation
-    {:ok, cancel_fn} = SessionProcess.dispatch_async(
-      session_id,
-      "user.fetch",
-      123,
-      async: true
-    )
+    # Async dispatch (convenience - automatically adds async: true)
+    :ok = SessionProcess.dispatch_async(session_id, "user.fetch", 123)
+
+    # Equivalent to:
+    # :ok = SessionProcess.dispatch(session_id, "user.fetch", 123, async: true)
 
     # Get state
     state = SessionProcess.get_state(session_id)
@@ -631,11 +629,13 @@ Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.
    end
    ```
 
-5. **dispatch_async Returns Cancellation**:
+5. **dispatch_async is Convenience Alias**:
    ```elixir
-   # Returns {:ok, cancel_fn}
-   {:ok, cancel_fn} = dispatch_async(session_id, "fetch", nil, async: true)
-   cancel_fn.()  # Call to cancel
+   # These are equivalent:
+   :ok = dispatch_async(session_id, "fetch", data)
+   :ok = dispatch(session_id, "fetch", data, async: true)
+
+   # Cancellation is handled internally via handle_async/3 callback in reducer
    ```
 
 6. **Prefer select_state/2 for Large States**:

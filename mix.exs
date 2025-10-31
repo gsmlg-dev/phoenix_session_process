@@ -1,7 +1,7 @@
 defmodule Phoenix.SessionProcess.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "1.0.0"
   @source_url "https://github.com/gsmlg-dev/phoenix_session_process"
 
   def project do
@@ -111,13 +111,7 @@ defmodule Phoenix.SessionProcess.MixProject do
         Utilities: [
           Phoenix.SessionProcess.Helpers,
           Phoenix.SessionProcess.Telemetry,
-          Phoenix.SessionProcess.Redux,
-          Phoenix.SessionProcess.Redux.Selector,
-          Phoenix.SessionProcess.Redux.Subscription,
-          Phoenix.SessionProcess.Redux.LiveView,
-          Phoenix.SessionProcess.MigrationExamples,
-          Phoenix.SessionProcess.ActivityTracker,
-          Phoenix.SessionProcess.RateLimiter
+          Phoenix.SessionProcess.Error
         ]
       ],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]

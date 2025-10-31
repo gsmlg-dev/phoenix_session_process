@@ -636,74 +636,44 @@ defmodule Phoenix.SessionProcess do
   end
 
   @doc """
-  Dispatch an action asynchronously and return a cancellation function.
+  Dispatch an action asynchronously (convenience alias).
 
-  Unlike `dispatch/4` which returns `:ok`, this function returns a cancel callback
-  that can be used to cancel the pending async action.
+  This is a convenience function that automatically adds `async: true` to the meta.
+  It's equivalent to calling `dispatch(session_id, type, payload, [meta | async: true])`.
+
+  When `async: true` is in the meta, the action will trigger `handle_async/3` callbacks
+  in reducers that define them. The `handle_async` callback receives a dispatch function
+  and must return a cancellation callback for internal lifecycle management.
 
   ## Parameters
   - `session_id` - Session identifier
   - `action_type` - Action type (binary string)
   - `payload` - Action payload (any term)
-  - `meta` - Action metadata (keyword list)
+  - `meta` - Action metadata (keyword list, `async: true` will be added automatically)
 
   ## Returns
-  - `{:ok, cancel_fn}` - Action dispatched successfully with cancellation function
+  - `:ok` - Action dispatched successfully
   - `{:error, {:session_not_found, session_id}}` - If session doesn't exist
-
-  The cancellation function has signature: `cancel_fn.() :: :ok`
-  Calling it will attempt to cancel the pending action (best-effort).
 
   ## Examples
 
-      # Async dispatch with cancellation
-      {:ok, cancel} = SessionProcess.dispatch_async(session_id, "user.reload")
+      # Equivalent to: dispatch(id, "user.reload", nil, async: true)
+      :ok = SessionProcess.dispatch_async(session_id, "user.reload")
 
-      # Cancel if needed
-      cancel.()
+      # With payload - equivalent to: dispatch(id, "fetch_data", data, async: true)
+      :ok = SessionProcess.dispatch_async(session_id, "fetch_data", %{page: 1})
 
-      # With payload
-      {:ok, cancel} = SessionProcess.dispatch_async(session_id, "fetch_data", %{page: 1})
-
-      # Cancel after timeout
-      Process.send_after(self(), {:cancel, cancel}, 5000)
+      # With additional meta - equivalent to: dispatch(id, "reload", nil, [priority: :high, async: true])
+      :ok = SessionProcess.dispatch_async(session_id, "reload", nil, priority: :high)
   """
   @spec dispatch_async(binary(), String.t(), term(), keyword()) ::
-          {:ok, (-> :ok)} | {:error, term()}
+          :ok | {:error, term()}
   def dispatch_async(session_id, action_type, payload \\ nil, meta \\ [])
 
   def dispatch_async(session_id, action_type, payload, meta)
       when is_binary(session_id) and is_binary(action_type) and is_list(meta) do
-    alias Phoenix.SessionProcess.Action
-
-    # Convert keyword list to map for Action struct
-    meta_map = Map.new(meta)
-
-    # Generate unique reference for this dispatch
-    ref = make_ref()
-
-    # Add cancel_ref to meta
-    meta_with_ref = Map.put(meta_map, :cancel_ref, ref)
-
-    # Create action from components
-    action = Action.new(action_type, payload, meta_with_ref)
-
-    case ProcessSupervisor.session_process_pid(session_id) do
-      nil ->
-        {:error, {:session_not_found, session_id}}
-
-      pid ->
-        # Send async dispatch message
-        cast(session_id, {:dispatch_action, action})
-
-        # Return cancel function
-        cancel_fn = fn ->
-          GenServer.cast(pid, {:cancel_action, ref})
-          :ok
-        end
-
-        {:ok, cancel_fn}
-    end
+    # Add async: true to meta and delegate to dispatch/4
+    dispatch(session_id, action_type, payload, Keyword.put(meta, :async, true))
   end
 
   def dispatch_async(_session_id, action_type, _payload, _meta) when not is_binary(action_type) do
@@ -1066,9 +1036,12 @@ defmodule Phoenix.SessionProcess do
             fn -> nil end
           end
       """
-      def handle_async(_action, _dispatch, _state), do: fn -> nil end
 
-      defoverridable init_state: 0, handle_action: 2, handle_async: 3
+      # NOTE: No default implementation for handle_async/3
+      # Only export handle_async/3 if explicitly defined by the reducer
+      # This ensures function_exported?(module, :handle_async, 3) accurately reflects intent
+
+      defoverridable init_state: 0, handle_action: 2
     end
   end
 
