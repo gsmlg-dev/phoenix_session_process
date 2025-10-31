@@ -59,7 +59,8 @@ Add the supervisor to your application's supervision tree:
 def start(_type, _args) do
   children = [
     # ... other children ...
-    {Phoenix.SessionProcess.Supervisor, []}
+    {Phoenix.SessionProcess, []}
+    # Or use: {Phoenix.SessionProcess.Supervisor, []}
   ]
 
   Supervisor.start_link(children, strategy: :one_for_one)

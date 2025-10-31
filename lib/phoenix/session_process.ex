@@ -24,7 +24,8 @@ defmodule Phoenix.SessionProcess do
       def start(_type, _args) do
         children = [
           # ... other children ...
-          {Phoenix.SessionProcess.Supervisor, []}
+          {Phoenix.SessionProcess, []}
+          # Or use: {Phoenix.SessionProcess.Supervisor, []}
         ]
 
         Supervisor.start_link(children, strategy: :one_for_one)
@@ -150,6 +151,61 @@ defmodule Phoenix.SessionProcess do
 
   alias Phoenix.SessionProcess.{Cleanup, Config, ProcessSupervisor}
   alias Phoenix.SessionProcess.Registry, as: SessionRegistry
+
+  @doc """
+  Starts the SessionProcess supervision tree.
+
+  This function delegates to `Phoenix.SessionProcess.Supervisor.start_link/1` and
+  should be used in your application's supervision tree for cleaner syntax.
+
+  ## Parameters
+  - `init_arg` - Initialization argument (typically an empty list `[]`)
+
+  ## Returns
+  - `{:ok, pid}` - Supervisor started successfully
+  - `{:error, reason}` - If supervisor failed to start
+
+  ## Examples
+
+  In your application supervision tree:
+
+      def start(_type, _args) do
+        children = [
+          # Cleaner syntax using Phoenix.SessionProcess
+          {Phoenix.SessionProcess, []}
+
+          # Or explicitly use the Supervisor module
+          {Phoenix.SessionProcess.Supervisor, []}
+        ]
+
+        Supervisor.start_link(children, strategy: :one_for_one)
+      end
+  """
+  @spec start_link(any()) :: Supervisor.on_start()
+  defdelegate start_link(init_arg), to: Phoenix.SessionProcess.Supervisor
+
+  @doc """
+  Returns a child specification for starting the SessionProcess supervision tree.
+
+  This is automatically called when adding `{Phoenix.SessionProcess, []}` to a
+  supervision tree. The function delegates to `Phoenix.SessionProcess.Supervisor.child_spec/1`.
+
+  ## Parameters
+  - `init_arg` - Initialization argument passed to `start_link/1`
+
+  ## Returns
+  - Child specification map with `:id`, `:start`, and other supervisor options
+
+  ## Examples
+
+  The child spec is automatically used in supervision trees:
+
+      children = [
+        {Phoenix.SessionProcess, []}  # child_spec/1 is called automatically
+      ]
+  """
+  @spec child_spec(any()) :: Supervisor.child_spec()
+  defdelegate child_spec(init_arg), to: Phoenix.SessionProcess.Supervisor
 
   @doc """
   Starts a session process using the default configured module.

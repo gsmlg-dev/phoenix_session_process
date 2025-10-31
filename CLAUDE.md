@@ -411,7 +411,8 @@ config :phoenix_session_process,
 # lib/my_app/application.ex
 def start(_type, _args) do
   children = [
-    Phoenix.SessionProcess.Supervisor,
+    {Phoenix.SessionProcess, []},
+    # Or: Phoenix.SessionProcess.Supervisor,
     # ... other children
   ]
 
