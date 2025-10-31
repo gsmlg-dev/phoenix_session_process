@@ -623,9 +623,23 @@ defmodule Phoenix.SessionProcess do
   - `action_type` - Action type identifier (binary string, required)
   - `payload` - Action payload (any term, defaults to nil)
   - `meta` - Action metadata (keyword list, defaults to []):
-    - `:reducers` - List of reducer names to target
-    - `:reducer_prefix` - Prefix to filter reducers by
+    - `:reducers` - List of reducer names (atoms) to target explicitly. When specified:
+      * Bypasses normal prefix routing entirely
+      * Only calls the specified reducers
+      * Passes full action type WITHOUT prefix stripping
+      * Logs warning if any reducers don't exist
+    - `:reducer_prefix` - Prefix to filter reducers by (when `:reducers` not specified)
     - `:async` - Route to handle_async/3 (true) or handle_action/2 (false, default)
+
+  ## Action Type Stripping Behavior
+
+  **Normal dispatch** (without `meta.reducers`):
+  - Reducers with `@action_prefix "user"` receive action type with prefix stripped
+  - Example: `dispatch(id, "user.reload")` → reducer sees `"reload"`
+
+  **Explicit targeting** (with `meta.reducers`):
+  - Action type is passed unchanged to specified reducers
+  - Example: `dispatch(id, "user.reload", nil, reducers: [:user])` → reducer sees `"user.reload"`
 
   ## Returns
   - `:ok` - Action dispatched successfully
@@ -633,16 +647,23 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      # Simple action
+      # Simple action with prefix routing (type stripped)
       :ok = SessionProcess.dispatch(session_id, "user.reload")
+      # → UserReducer receives "reload" (prefix stripped)
 
       # Action with payload
       :ok = SessionProcess.dispatch(session_id, "user.update", %{name: "Alice"})
 
-      # Target specific reducers
-      :ok = SessionProcess.dispatch(session_id, "reload", nil, reducers: [:user, :cart])
+      # Force specific reducers (type NOT stripped)
+      :ok = SessionProcess.dispatch(session_id, "user.reload", nil, reducers: [:user, :cart])
+      # → ONLY :user and :cart reducers called
+      # → Both receive "user.reload" (prefix NOT stripped)
 
-      # Use prefix routing
+      # Warning logged for missing reducers
+      :ok = SessionProcess.dispatch(session_id, "reload", nil, reducers: [:nonexistent])
+      # → Logs warning: "Missing reducers: [:nonexistent]"
+
+      # Use prefix filter
       :ok = SessionProcess.dispatch(session_id, "fetch-data", nil, reducer_prefix: "user")
 
       # Async action (routed to handle_async/3)
@@ -1577,19 +1598,24 @@ defmodule Phoenix.SessionProcess do
       end
 
       # Strip action prefix before passing to reducer if reducer has a prefix
-      defp strip_action_prefix(action, reducer_prefix) do
-        if reducer_prefix && reducer_prefix != "" do
-          case String.split(action.type, ".", parts: 2) do
-            [^reducer_prefix, local_type] ->
-              %{action | type: local_type}
-
-            _ ->
-              # Prefix doesn't match, keep as-is
-              action
-          end
-        else
-          # No prefix or catch-all reducer, pass unchanged
+      defp strip_action_prefix(action, reducer_prefix, skip_strip \\ false) do
+        if skip_strip do
+          # When using meta.reducers for explicit targeting, don't strip prefix
           action
+        else
+          if reducer_prefix && reducer_prefix != "" do
+            case String.split(action.type, ".", parts: 2) do
+              [^reducer_prefix, local_type] ->
+                %{action | type: local_type}
+
+              _ ->
+                # Prefix doesn't match, keep as-is
+                action
+            end
+          else
+            # No prefix or catch-all reducer, pass unchanged
+            action
+          end
         end
       end
 
@@ -1601,8 +1627,10 @@ defmodule Phoenix.SessionProcess do
         slice_state = Map.get(app_state, slice_key, %{})
 
         # Get reducer's action prefix and strip it from action type
+        # Skip stripping when using explicit reducer targeting (meta.reducers)
         reducer_prefix = module.__reducer_action_prefix__()
-        local_action = strip_action_prefix(action, reducer_prefix)
+        skip_strip = not is_nil(Action.target_reducers(action))
+        local_action = strip_action_prefix(action, reducer_prefix, skip_strip)
 
         # Check throttle first
         if ActionRateLimiter.should_throttle?(module, action, internal_state) do
@@ -1750,6 +1778,7 @@ defmodule Phoenix.SessionProcess do
       # Filter reducers based on action routing metadata
       defp filter_reducers_for_action(action, all_reducers) do
         alias Phoenix.SessionProcess.Action
+        require Logger
 
         # Check explicit reducer targeting (highest priority)
         case Action.target_reducers(action) do
@@ -1759,7 +1788,23 @@ defmodule Phoenix.SessionProcess do
 
           target_list when is_list(target_list) ->
             # Explicit list of reducer names to target
-            Enum.filter(all_reducers, fn {name, _} -> name in target_list end)
+            filtered_reducers = Enum.filter(all_reducers, fn {name, _} -> name in target_list end)
+
+            # Log warning if any requested reducers are missing
+            requested_names = MapSet.new(target_list)
+            found_names = MapSet.new(Enum.map(filtered_reducers, fn {name, _} -> name end))
+            missing = MapSet.difference(requested_names, found_names)
+
+            if MapSet.size(missing) > 0 do
+              Logger.warning("""
+              Action dispatched with meta.reducers targeting non-existent reducers.
+              Action type: #{action.type}
+              Missing reducers: #{inspect(MapSet.to_list(missing))}
+              Available reducers: #{inspect(Map.keys(all_reducers))}
+              """)
+            end
+
+            filtered_reducers
         end
       end
 

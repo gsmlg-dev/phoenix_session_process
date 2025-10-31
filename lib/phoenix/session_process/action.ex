@@ -11,8 +11,12 @@ defmodule Phoenix.SessionProcess.Action do
   - `payload` - Action data (any term)
   - `meta` - Action metadata:
     - `async: true` - Route to handle_async/3 instead of handle_action/2
-    - `reducers: [:user, :cart]` - Only call these named reducers
-    - `reducer_prefix: "user"` - Only call reducers with this prefix
+    - `reducers: [:user, :cart]` - List of reducer names (atoms) to target explicitly.
+      * Bypasses normal prefix routing
+      * Only specified reducers are called
+      * Action type passed WITHOUT prefix stripping
+      * Warning logged if reducer doesn't exist
+    - `reducer_prefix: "user"` - Only call reducers with this prefix (when `reducers` not specified)
     - Custom metadata for middleware/logging
 
   ## Usage
@@ -28,8 +32,9 @@ defmodule Phoenix.SessionProcess.Action do
       # With meta (async) - note: meta is a keyword list
       dispatch(session_id, "user.fetch", %{page: 1}, async: true)
 
-      # Target specific reducers
-      dispatch(session_id, "reload", nil, reducers: [:user, :cart])
+      # Target specific reducers (bypasses prefix routing, no prefix stripping)
+      dispatch(session_id, "user.reload", nil, reducers: [:user, :cart])
+      # → Only :user and :cart called, both receive "user.reload" unchanged
 
   Reducers pattern match on the normalized Action struct for fast, consistent matching.
   """
