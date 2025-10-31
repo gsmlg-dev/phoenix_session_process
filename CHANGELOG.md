@@ -5,6 +5,179 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-10-31
+
+### Breaking Changes
+
+- **Renamed `@prefix` to `@action_prefix` in reducer modules**
+  - All reducer modules must now use `@action_prefix` instead of `@prefix`
+  - The `@action_prefix` can be `nil` or `""` to create catch-all reducers that handle all actions
+  - Migration: Simply rename `@prefix` to `@action_prefix` in your reducer modules
+  - Example:
+    ```elixir
+    # Before (v0.x)
+    defmodule MyReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :my_reducer
+      @prefix "my"  # Old name
+    end
+
+    # After (v1.0.0)
+    defmodule MyReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :my_reducer
+      @action_prefix "my"  # New name
+    end
+    ```
+
+- **Changed `dispatch/3` and `dispatch_async/3` return values**
+  - Both functions now return `:ok` instead of `{:ok, new_state}`
+  - All dispatches are now async (fire-and-forget) by default
+  - Use `get_state/1-2` to retrieve state after dispatch
+  - Migration:
+    ```elixir
+    # Before (v0.x)
+    {:ok, new_state} = SessionProcess.dispatch(session_id, :increment)
+    IO.inspect(new_state)
+
+    # After (v1.0.0)
+    :ok = SessionProcess.dispatch(session_id, :increment)
+    new_state = SessionProcess.get_state(session_id)
+    IO.inspect(new_state)
+    ```
+
+- **Removed deprecated `Phoenix.SessionProcess.Redux` module**
+  - The old struct-based Redux API has been removed
+  - Use the Redux Store API (built into SessionProcess) instead
+  - See migration guide: `REDUX_TO_SESSIONPROCESS_MIGRATION.md`
+
+- **Action prefix stripping in reducers**
+  - Reducers with `@action_prefix` now receive action types with the prefix stripped
+  - When a reducer has `@action_prefix "counter"`, `handle_action` receives `"increment"` instead of `"counter.increment"`
+  - Dispatch calls still use full prefixed names (e.g., `dispatch(id, "counter.increment")`)
+  - Catch-all reducers (prefix `nil` or `""`) receive unchanged action types
+  - Migration:
+    ```elixir
+    # Before (v0.x)
+    defmodule CounterReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :counter
+      @action_prefix "counter"
+
+      def handle_action(%Action{type: "counter.increment"}, state) do
+        %{state | count: state.count + 1}
+      end
+    end
+
+    # After (v1.0.0)
+    defmodule CounterReducer do
+      use Phoenix.SessionProcess, :reducer
+      @name :counter
+      @action_prefix "counter"
+
+      def handle_action(%Action{type: "increment"}, state) do
+        %{state | count: state.count + 1}
+      end
+    end
+
+    # Dispatch calls remain unchanged
+    dispatch(session_id, "counter.increment")
+    ```
+
+### Added
+
+- **`dispatch_async/3` function for explicit async dispatch**
+  - Same behavior as `dispatch/3` but with clearer naming for async operations
+  - Makes code intent more explicit when dispatching async actions
+  - Example: `:ok = SessionProcess.dispatch_async(session_id, :increment)`
+
+### Changed
+
+- **Improved action routing with `@action_prefix`**
+  - More consistent naming aligns with action routing semantics
+  - Catch-all reducers now explicitly use `nil` or `""` for `@action_prefix`
+  - Better documentation and examples for action routing
+
+### Migration Guide
+
+1. **Rename `@prefix` to `@action_prefix` in all reducer modules**
+   - Search your codebase for `@prefix` in reducer modules
+   - Replace with `@action_prefix`
+   - No logic changes required
+
+2. **Update action type patterns in handle_action/handle_async**
+   - Remove the prefix from action type patterns
+   - Example: `"counter.increment"` becomes `"increment"`
+   - Dispatch calls remain unchanged (still use full prefixed names)
+   - Only affects reducers with non-nil/non-empty `@action_prefix`
+
+3. **Update dispatch call sites to handle `:ok` return value**
+   - Replace `{:ok, state} = dispatch(...)` with `:ok = dispatch(...)`
+   - Add `get_state(session_id)` calls where you need the updated state
+   - Consider: Do you actually need the state? Many dispatches are fire-and-forget
+
+4. **Remove uses of deprecated Redux module**
+   - If using `Phoenix.SessionProcess.Redux` struct-based API
+   - Migrate to Redux Store API (SessionProcess IS the store)
+   - See `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed migration
+
+### Notes
+
+- All changes are breaking but migrations are straightforward
+- Most codebases will only need to rename `@prefix` to `@action_prefix`
+- Dispatch return value change makes async nature more explicit
+- v0.9.x will be the last version supporting deprecated APIs
+
+## [0.6.0] - 2025-10-29
+
+### Added
+- **Redux Store API**: SessionProcess now IS the Redux store - no separate Redux struct needed
+  - `Phoenix.SessionProcess.dispatch/3` - Dispatch actions synchronously or asynchronously
+  - `Phoenix.SessionProcess.subscribe/4` - Subscribe to state changes with optional selectors
+  - `Phoenix.SessionProcess.unsubscribe/2` - Remove subscriptions
+  - `Phoenix.SessionProcess.register_reducer/3` - Register named reducers
+  - `Phoenix.SessionProcess.register_selector/3` - Register named selectors
+  - `Phoenix.SessionProcess.get_state/2` - Get state with optional selector
+  - `Phoenix.SessionProcess.select/2` - Apply registered selector to current state
+  - `user_init/1` callback for defining initial Redux state
+- **Enhanced LiveView Integration**: New helpers for Redux Store API
+  - `Phoenix.SessionProcess.LiveView.mount_store/4` - Mount with direct SessionProcess subscriptions
+  - `Phoenix.SessionProcess.LiveView.unmount_store/1` - Clean up subscriptions (optional, automatic cleanup via monitoring)
+  - `Phoenix.SessionProcess.LiveView.dispatch_store/3` - Dispatch actions with sync/async options
+- **Selector-Based Subscriptions**: Only receive updates when selected state changes
+  - Efficient fine-grained state updates
+  - Memoized selector support
+  - Automatic equality checking to prevent unnecessary notifications
+- **Process Monitoring**: Automatic subscription cleanup when LiveView processes terminate
+- **Comprehensive Documentation**: Migration guides and examples
+  - `MIGRATION_GUIDE.md` - Quick migration guide with 2-step process
+  - `REDUX_TO_SESSIONPROCESS_MIGRATION.md` - Detailed migration guide
+  - `examples/liveview_redux_store_example.ex` - Complete working example (400+ lines)
+  - Updated CLAUDE.md with comprehensive Redux Store API documentation
+
+### Changed
+- **70% Less Boilerplate**: Simplified API eliminates manual Redux struct management
+- **Simpler Architecture**: SessionProcess handles Redux infrastructure internally
+- **Better Performance**: Selector-based updates reduce unnecessary state notifications
+- **Improved DX**: Clearer code intent with less nesting and fewer concepts
+
+### Deprecated
+- `Phoenix.SessionProcess.Redux` module - Use Redux Store API instead
+  - `Redux.init_state/2` - Use `user_init/1` callback
+  - `Redux.dispatch/3` - Use `SessionProcess.dispatch/3`
+  - `Redux.subscribe/3` - Use `SessionProcess.subscribe/4`
+  - `Redux.get_state/1` - Use `SessionProcess.get_state/2`
+- `Phoenix.SessionProcess.LiveView` old API - Use new Redux Store API
+  - `mount_session/4` - Use `mount_store/4`
+  - `unmount_session/1` - Use `unmount_store/1`
+- **Migration Timeline**: Deprecated APIs will be removed in v1.0.0 (supported through v0.9.x)
+
+### Migration
+- All old code continues to work with deprecation warnings
+- See `MIGRATION_GUIDE.md` for quick 2-step migration
+- See `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed examples
+- No breaking changes - 100% backward compatible
+
 ## [0.4.0] - 2024-10-24
 
 ### Added
@@ -88,6 +261,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate limiting and session limit enforcement
 - Telemetry integration for monitoring
 
+[0.6.0]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.4.0...v0.6.0
 [0.4.0]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.2.0...v0.3.0

@@ -1,7 +1,7 @@
 defmodule Phoenix.SessionProcess.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "1.0.0"
   @source_url "https://github.com/gsmlg-dev/phoenix_session_process"
 
   def project do
@@ -42,7 +42,6 @@ defmodule Phoenix.SessionProcess.MixProject do
     [
       {:plug, "~> 1.0"},
       {:telemetry, "~> 1.0"},
-      {:phoenix_pubsub, "~> 2.1"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
@@ -65,7 +64,7 @@ defmodule Phoenix.SessionProcess.MixProject do
     - Automatic cleanup with configurable TTL
     - LiveView integration for reactive UIs
     - Redux-style state management with subscriptions and selectors
-    - Real-time state change notifications via Phoenix.PubSub
+    - Real-time state change notifications
     - High performance (10,000+ sessions/second)
     - Built-in telemetry and monitoring
     """
@@ -112,13 +111,7 @@ defmodule Phoenix.SessionProcess.MixProject do
         Utilities: [
           Phoenix.SessionProcess.Helpers,
           Phoenix.SessionProcess.Telemetry,
-          Phoenix.SessionProcess.Redux,
-          Phoenix.SessionProcess.Redux.Selector,
-          Phoenix.SessionProcess.Redux.Subscription,
-          Phoenix.SessionProcess.Redux.LiveView,
-          Phoenix.SessionProcess.MigrationExamples,
-          Phoenix.SessionProcess.ActivityTracker,
-          Phoenix.SessionProcess.RateLimiter
+          Phoenix.SessionProcess.Error
         ]
       ],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]

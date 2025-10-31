@@ -75,30 +75,63 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   - No persistence across application restarts
   - No built-in security or access controls
 
-  ## Custom Implementation
+  ## Custom Implementation with Redux Store API (v1.0.0)
 
-  For more advanced use cases, create a custom session process:
+  For more advanced use cases, create a custom session process using the Redux Store API
+  with the `:reducer` macro:
+
+      defmodule MyApp.CartReducer do
+        use Phoenix.SessionProcess, :reducer
+
+        @name :cart
+        @action_prefix "cart"
+
+        def init_state do
+          %{items: [], total: 0}
+        end
+
+        def handle_action(action, state) do
+          alias Phoenix.SessionProcess.Action
+
+          case action do
+            %Action{type: "cart.add", payload: item} ->
+              %{state | items: [item | state.items], total: state.total + item.price}
+
+            %Action{type: "cart.clear"} ->
+              %{state | items: [], total: 0}
+
+            _ ->
+              state
+          end
+        end
+      end
 
       defmodule MyApp.SessionProcess do
         use Phoenix.SessionProcess, :process
 
-        @impl true
-        def init(_init_arg) do
-          {:ok, %{user: nil, cart: [], preferences: %{}}}
+        def init_state(_args) do
+          %{}
         end
 
-        @impl true
-        def handle_call(:get_user, _from, state) do
-          {:reply, state.user, state}
-        end
-
-        @impl true
-        def handle_cast({:set_user, user}, state) do
-          {:noreply, %{state | user: user}}
+        def combined_reducers do
+          [MyApp.CartReducer]
         end
       end
 
-  Then configure it as the default:
+  Use the session process:
+
+      # Start session
+      Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
+
+      # Dispatch actions (MUST use binary types)
+      :ok = Phoenix.SessionProcess.dispatch(session_id, "cart.add", %{id: 1, price: 10})
+      :ok = Phoenix.SessionProcess.dispatch(session_id, "cart.add", %{id: 2, price: 20})
+
+      # Get current state (namespaced by reducer)
+      state = Phoenix.SessionProcess.get_state(session_id)
+      # => %{cart: %{items: [...], total: 30}}
+
+  Configure it as the default:
 
       config :phoenix_session_process,
         session_process: MyApp.SessionProcess

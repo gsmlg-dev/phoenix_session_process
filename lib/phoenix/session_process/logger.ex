@@ -1,4 +1,4 @@
-defmodule Phoenix.SessionProcess.TelemetryLogger do
+defmodule Phoenix.SessionProcess.Logger do
   @moduledoc """
   Default telemetry event logger for Phoenix.SessionProcess.
 
@@ -10,23 +10,23 @@ defmodule Phoenix.SessionProcess.TelemetryLogger do
 
   Attach the default logger to capture all session process events:
 
-      Phoenix.SessionProcess.TelemetryLogger.attach_default_logger()
+      Phoenix.SessionProcess.Logger.attach_default_logger()
 
   You can also attach individual event handlers:
 
-      Phoenix.SessionProcess.TelemetryLogger.attach_worker_events()
-      Phoenix.SessionProcess.TelemetryLogger.attach_session_events()
-      Phoenix.SessionProcess.TelemetryLogger.attach_cleanup_events()
+      Phoenix.SessionProcess.Logger.attach_worker_events()
+      Phoenix.SessionProcess.Logger.attach_session_events()
+      Phoenix.SessionProcess.Logger.attach_cleanup_events()
 
   ## Event Filtering
 
   You can filter events by log level:
 
       # Only log errors and warnings
-      Phoenix.SessionProcess.TelemetryLogger.attach_default_logger(level: :warn)
+      Phoenix.SessionProcess.Logger.attach_default_logger(level: :warn)
 
       # Only log session lifecycle events
-      Phoenix.SessionProcess.TelemetryLogger.attach_session_events(level: :info)
+      Phoenix.SessionProcess.Logger.attach_session_events(level: :info)
 
   ## Custom Handlers
 

@@ -2,13 +2,13 @@ defmodule TestProcessLink do
   @moduledoc """
   Test helper module for session process with LiveView link testing.
 
-  This module provides a session process implementation using the :process_link
-  option to verify LiveView monitoring functionality and get_session_id behavior.
+  This module provides a session process implementation to verify LiveView
+  monitoring functionality and get_session_id behavior.
 
   Uses standard GenServer state management (no Agent).
   """
 
-  use Phoenix.SessionProcess, :process_link
+  use Phoenix.SessionProcess, :process
 
   @impl true
   def init(init_arg \\ %{}) do
