@@ -32,7 +32,8 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       session_id = "test_process_with_arg_#{:rand.uniform(10000)}"
       init_arg = %{user_id: 123, data: "test"}
 
-      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestProcessWithArg, args: init_arg)
+      {:ok, _pid} =
+        SessionProcess.start_session(session_id, module: TestProcessWithArg, args: init_arg)
 
       state = SessionProcess.call(session_id, :get_state)
       assert state.initialized_with == init_arg
@@ -44,7 +45,8 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       session_id = "test_process_with_arg_#{:rand.uniform(10000)}"
       init_arg = %{user_id: 456, data: "test"}
 
-      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestProcessLinkWithArg, args: init_arg)
+      {:ok, _pid} =
+        SessionProcess.start_session(session_id, module: TestProcessLinkWithArg, args: init_arg)
 
       state = SessionProcess.call(session_id, :get_state)
       assert state.initialized_with == init_arg
@@ -61,8 +63,11 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       init_arg = %{value: 42}
 
       # Both should accept the same argument format
-      {:ok, _} = SessionProcess.start_session(session_id_1, module: TestProcessWithArg, args: init_arg)
-      {:ok, _} = SessionProcess.start_session(session_id_2, module: TestProcessLinkWithArg, args: init_arg)
+      {:ok, _} =
+        SessionProcess.start_session(session_id_1, module: TestProcessWithArg, args: init_arg)
+
+      {:ok, _} =
+        SessionProcess.start_session(session_id_2, module: TestProcessLinkWithArg, args: init_arg)
 
       state1 = SessionProcess.call(session_id_1, :get_state)
       state2 = SessionProcess.call(session_id_2, :get_state)
