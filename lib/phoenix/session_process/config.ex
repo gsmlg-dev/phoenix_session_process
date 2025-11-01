@@ -15,7 +15,8 @@ defmodule Phoenix.SessionProcess.Config do
     session_process: MyApp.SessionProcess,  # Default session module
     max_sessions: 10_000,                   # Maximum concurrent sessions
     session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
-    rate_limit: 100                        # Sessions per minute limit
+    rate_limit: 100,                       # Sessions per minute limit
+    unmatched_action_handler: :log         # How to handle unmatched actions (:log, :warn, :silent, or custom function)
   ```
 
   ## Options
@@ -39,6 +40,15 @@ defmodule Phoenix.SessionProcess.Config do
   - **Type**: `integer()`
   - **Default**: `100`
   - **Description**: Maximum number of new sessions that can be created per minute. Prevents abuse.
+
+  ### `:unmatched_action_handler`
+  - **Type**: `:log | :warn | :silent | (action, reducer_module, reducer_name -> any())`
+  - **Default**: `:log`
+  - **Description**: How to handle actions that don't match any pattern in a reducer's `handle_action/2`:
+    - `:log` - Log debug message suggesting use of action prefix
+    - `:warn` - Log warning message (useful for debugging)
+    - `:silent` - No logging
+    - Custom function with arity 3: `fun(action, reducer_module, reducer_name)`
 
   ## Runtime Configuration
 
@@ -89,6 +99,7 @@ defmodule Phoenix.SessionProcess.Config do
   @default_session_ttl 3_600_000
   # sessions per minute
   @default_rate_limit 100
+  @default_unmatched_action_handler :log
 
   @doc """
   Returns the configured default session process module.
@@ -202,6 +213,44 @@ defmodule Phoenix.SessionProcess.Config do
   @spec rate_limit :: integer()
   def rate_limit do
     get_config(:rate_limit, @default_rate_limit)
+  end
+
+  @doc """
+  Returns the handler for unmatched actions in reducers.
+
+  ## Examples
+
+      iex> Phoenix.SessionProcess.Config.unmatched_action_handler()
+      :log
+
+  ## Returns
+
+  - `:log` - Log debug messages for unmatched actions (default)
+  - `:warn` - Log warning messages for unmatched actions
+  - `:silent` - No logging
+  - `function/3` - Custom handler function with signature: `fun(action, reducer_module, reducer_name)`
+
+  ## Configuration
+
+  Set in your config file:
+
+      config :phoenix_session_process,
+        unmatched_action_handler: :warn
+
+      # Or with custom function:
+      config :phoenix_session_process,
+        unmatched_action_handler: fn action, module, name ->
+          MyApp.Metrics.track_unmatched_action(action, module, name)
+        end
+
+  ## Note
+
+  This helps debug action routing issues. If you see many unmatched actions,
+  consider using `@action_prefix` to limit which actions are routed to each reducer.
+  """
+  @spec unmatched_action_handler :: :log | :warn | :silent | function()
+  def unmatched_action_handler do
+    get_config(:unmatched_action_handler, @default_unmatched_action_handler)
   end
 
   @doc """

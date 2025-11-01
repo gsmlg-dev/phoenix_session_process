@@ -269,6 +269,13 @@ The library is organized into several logical groups:
   - `dispatch_async/4` is an alias for `dispatch(id, type, payload, [meta | async: true])`
   - `handle_async/3` MUST return cancellation callback `(() -> any())` for internal use
 
+- **Unmatched Action Handling**:
+  - Reducers can override `handle_unmatched_action/2` to customize behavior for unmatched actions
+  - Reducers can override `handle_unmatched_async/3` to customize behavior for unmatched async actions
+  - Global handler configured via `unmatched_action_handler` config option (:log, :warn, :silent, or custom function)
+  - Default behavior logs debug message suggesting use of `@action_prefix` to limit action routing
+  - Useful for debugging action routing issues in complex applications
+
 - **LiveView Integration**:
   - Use `Phoenix.SessionProcess.LiveView.mount_store/4` for direct subscriptions
   - Selector-based updates for efficiency
@@ -286,7 +293,8 @@ config :phoenix_session_process,
   session_process: MySessionProcess,  # Default session module
   max_sessions: 10_000,               # Maximum concurrent sessions
   session_ttl: 3_600_000,            # Session TTL in milliseconds (1 hour)
-  rate_limit: 100                    # Sessions per minute limit
+  rate_limit: 100,                   # Sessions per minute limit
+  unmatched_action_handler: :log     # How to handle unmatched actions (:log, :warn, :silent, or function)
 ```
 
 Configuration options:
@@ -294,6 +302,11 @@ Configuration options:
 - `max_sessions`: Maximum concurrent sessions (defaults to 10,000)
 - `session_ttl`: Session TTL in milliseconds (defaults to 1 hour)
 - `rate_limit`: Sessions per minute limit (defaults to 100)
+- `unmatched_action_handler`: How to handle actions that don't match any pattern in reducers (defaults to `:log`)
+  - `:log` - Log debug messages for unmatched actions
+  - `:warn` - Log warning messages for unmatched actions
+  - `:silent` - No logging
+  - Custom function with arity 3: `fn action, reducer_module, reducer_name -> ... end`
 
 ## Usage in Phoenix Applications
 
@@ -406,7 +419,8 @@ end
 config :phoenix_session_process,
   session_process: MyApp.SessionProcess,
   max_sessions: 10_000,
-  session_ttl: 3_600_000
+  session_ttl: 3_600_000,
+  unmatched_action_handler: :log  # Optional: :log | :warn | :silent | custom function
 
 # lib/my_app/application.ex
 def start(_type, _args) do
@@ -646,4 +660,26 @@ Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.
 
    # Client-side selection - transfers full state
    count = SessionProcess.get_state(session_id, fn s -> s.counter.count end)
+   ```
+
+7. **Unmatched Action Handling**:
+   ```elixir
+   # Default behavior: logs debug message for unmatched actions
+   def handle_action(action, state) do
+     case action do
+       %Action{type: "known"} -> # handle action
+       _ -> handle_unmatched_action(action, state)  # Logs debug message
+     end
+   end
+
+   # Override to customize behavior
+   def handle_unmatched_action(action, state) do
+     # Custom logic, e.g., track unmatched actions
+     MyApp.Metrics.track_unmatched(action)
+     state
+   end
+
+   # Or configure globally
+   config :phoenix_session_process,
+     unmatched_action_handler: :warn  # :log | :warn | :silent | custom function
    ```

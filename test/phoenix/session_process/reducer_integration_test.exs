@@ -1272,4 +1272,256 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       SessionProcess.terminate(session_id)
     end
   end
+
+  describe "unmatched action handling" do
+    defmodule CustomUnmatchedReducer do
+      use Phoenix.SessionProcess, :reducer
+      alias Phoenix.SessionProcess.Action
+
+      @name :custom_unmatched
+      @action_prefix "test"
+
+      def init_state do
+        %{matched: [], unmatched: []}
+      end
+
+      def handle_action(%Action{type: "matched", payload: data}, state) do
+        Map.update(state, :matched, [data], &[data | &1])
+      end
+
+      def handle_action(action, state) do
+        # Custom unmatched handler
+        handle_unmatched_action(action, state)
+      end
+
+      # Override to track unmatched actions
+      def handle_unmatched_action(action, state) do
+        Map.update(state, :unmatched, [action.type], &[action.type | &1])
+      end
+    end
+
+    defmodule DefaultUnmatchedReducer do
+      use Phoenix.SessionProcess, :reducer
+      alias Phoenix.SessionProcess.Action
+
+      @name :default_unmatched
+      @action_prefix "default"
+
+      def init_state do
+        %{count: 0}
+      end
+
+      def handle_action(%Action{type: "increment"}, state) do
+        Map.update(state, :count, 1, &(&1 + 1))
+      end
+
+      # Uses default unmatched handler (just returns state)
+      def handle_action(action, state) do
+        handle_unmatched_action(action, state)
+      end
+    end
+
+    defmodule AsyncUnmatchedReducer do
+      use Phoenix.SessionProcess, :reducer
+      alias Phoenix.SessionProcess.Action
+
+      @name :async_unmatched
+      @action_prefix "async"
+
+      def init_state do
+        %{async_calls: 0}
+      end
+
+      def handle_action(%Action{type: "sync"}, state) do
+        Map.put(state, :sync, true)
+      end
+
+      def handle_action(_action, state), do: state
+
+      # Handle async with fallback
+      def handle_async(%Action{type: "known"}, dispatch, _state) do
+        dispatch.("async.sync", nil, [])
+        fn -> nil end
+      end
+
+      def handle_async(action, dispatch, state) do
+        handle_unmatched_async(action, dispatch, state)
+      end
+    end
+
+    defmodule UnmatchedTestSession do
+      use Phoenix.SessionProcess, :process
+
+      def init_state(_args), do: %{}
+
+      def combined_reducers do
+        [
+          {:custom, CustomUnmatchedReducer, "test"},
+          {:default, DefaultUnmatchedReducer, "default"},
+          {:async, AsyncUnmatchedReducer, "async"}
+        ]
+      end
+    end
+
+    setup do
+      session_id = "unmatched_test_#{:rand.uniform(1_000_000)}"
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: UnmatchedTestSession)
+      on_exit(fn -> SessionProcess.terminate(session_id) end)
+      %{session_id: session_id}
+    end
+
+    test "custom unmatched handler tracks unmatched actions", %{session_id: session_id} do
+      # Dispatch matched action
+      SessionProcess.dispatch(session_id, "test.matched", "data1")
+
+      # Dispatch unmatched action
+      SessionProcess.dispatch(session_id, "test.unknown", "data2")
+      SessionProcess.dispatch(session_id, "test.another-unknown")
+
+      state = SessionProcess.get_state(session_id)
+
+      # Matched action should be in matched list
+      assert ["data1"] = state.custom.matched
+
+      # Unmatched actions should be tracked
+      assert "another-unknown" in state.custom.unmatched
+      assert "unknown" in state.custom.unmatched
+    end
+
+    test "default unmatched handler returns state unchanged", %{session_id: session_id} do
+      # Dispatch matched action
+      SessionProcess.dispatch(session_id, "default.increment")
+
+      # Dispatch unmatched action
+      SessionProcess.dispatch(session_id, "default.unknown")
+      SessionProcess.dispatch(session_id, "default.another")
+
+      state = SessionProcess.get_state(session_id)
+
+      # State should only reflect matched actions
+      assert state.default.count == 1
+      # Unmatched actions don't modify state
+      refute Map.has_key?(state.default, :unknown)
+    end
+
+    test "async unmatched handler with logging", %{session_id: session_id} do
+      import ExUnit.CaptureLog
+
+      # Dispatch known async action
+      :ok = SessionProcess.dispatch_async(session_id, "async.known")
+
+      # Wait for async dispatch
+      Process.sleep(50)
+
+      state = SessionProcess.get_state(session_id)
+      assert state.async.sync == true
+
+      # Dispatch unknown async action - should log debug message
+      log =
+        capture_log([level: :debug], fn ->
+          :ok = SessionProcess.dispatch_async(session_id, "async.unknown")
+          Process.sleep(10)
+        end)
+
+      assert log =~ "received unmatched async action"
+      assert log =~ "unknown"
+      assert log =~ "Consider using @action_prefix"
+    end
+
+    test "unmatched action with :warn handler logs warning" do
+      # Save original config
+      original = Application.get_env(:phoenix_session_process, :unmatched_action_handler)
+
+      try do
+        Application.put_env(:phoenix_session_process, :unmatched_action_handler, :warn)
+
+        session_id = "warn_test_#{:rand.uniform(1_000_000)}"
+        {:ok, _pid} = SessionProcess.start_session(session_id, module: UnmatchedTestSession)
+
+        import ExUnit.CaptureLog
+
+        log =
+          capture_log(fn ->
+            SessionProcess.dispatch(session_id, "default.unmatched-action")
+            Process.sleep(50)
+          end)
+
+        assert log =~ "received unmatched action"
+        assert log =~ "unmatched-action"
+
+        SessionProcess.terminate(session_id)
+      after
+        # Restore original config
+        if original do
+          Application.put_env(:phoenix_session_process, :unmatched_action_handler, original)
+        else
+          Application.delete_env(:phoenix_session_process, :unmatched_action_handler)
+        end
+      end
+    end
+
+    test "unmatched action with :silent handler doesn't log" do
+      # Save original config
+      original = Application.get_env(:phoenix_session_process, :unmatched_action_handler)
+
+      try do
+        Application.put_env(:phoenix_session_process, :unmatched_action_handler, :silent)
+
+        session_id = "silent_test_#{:rand.uniform(1_000_000)}"
+        {:ok, _pid} = SessionProcess.start_session(session_id, module: UnmatchedTestSession)
+
+        import ExUnit.CaptureLog
+
+        log =
+          capture_log([level: :debug], fn ->
+            SessionProcess.dispatch(session_id, "test.unmatched-action")
+            Process.sleep(10)
+          end)
+
+        refute log =~ "received unmatched action"
+
+        SessionProcess.terminate(session_id)
+      after
+        # Restore original config
+        if original do
+          Application.put_env(:phoenix_session_process, :unmatched_action_handler, original)
+        else
+          Application.delete_env(:phoenix_session_process, :unmatched_action_handler)
+        end
+      end
+    end
+
+    test "unmatched action with custom function handler" do
+      # Save original config
+      original = Application.get_env(:phoenix_session_process, :unmatched_action_handler)
+      test_pid = self()
+
+      try do
+        custom_handler = fn action, module, name ->
+          send(test_pid, {:unmatched, action.type, module, name})
+        end
+
+        Application.put_env(:phoenix_session_process, :unmatched_action_handler, custom_handler)
+
+        session_id = "custom_fn_test_#{:rand.uniform(1_000_000)}"
+        {:ok, _pid} = SessionProcess.start_session(session_id, module: UnmatchedTestSession)
+
+        # Dispatch to default reducer which uses the global handler
+        SessionProcess.dispatch(session_id, "default.custom-unmatched")
+
+        assert_receive {:unmatched, "custom-unmatched", DefaultUnmatchedReducer,
+                        :default_unmatched},
+                       1000
+
+        SessionProcess.terminate(session_id)
+      after
+        # Restore original config
+        if original do
+          Application.put_env(:phoenix_session_process, :unmatched_action_handler, original)
+        else
+          Application.delete_env(:phoenix_session_process, :unmatched_action_handler)
+        end
+      end
+    end
+  end
 end

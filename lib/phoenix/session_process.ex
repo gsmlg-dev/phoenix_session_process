@@ -1034,13 +1034,95 @@ defmodule Phoenix.SessionProcess do
             %{state | data: data, priority: priority}
           end
       """
-      def handle_action(_action, state), do: state
+      def handle_action(action, state) do
+        handle_unmatched_action(action, state)
+      end
+
+      @doc """
+      Handle unmatched actions.
+
+      This callback is called when an action doesn't match any pattern in `handle_action/2`.
+      Override this to customize behavior for unmatched actions.
+
+      ## Parameters
+
+      - `action` - The unmatched action (Action struct)
+      - `state` - The current state slice for this reducer
+
+      ## Returns
+
+      - `state` - The state (unchanged by default)
+
+      ## Default Behavior
+
+      The default implementation logs a debug message based on the global
+      `unmatched_action_handler` configuration and returns the state unchanged.
+
+      ## Examples
+
+          # Custom handler that logs at info level
+          def handle_unmatched_action(action, state) do
+            require Logger
+            Logger.info("MyReducer ignored action: \#{action.type}")
+            state
+          end
+
+          # Custom handler that tracks metrics
+          def handle_unmatched_action(action, state) do
+            MyApp.Metrics.increment("reducer.unmatched_actions", tags: [reducer: :my_reducer])
+            state
+          end
+
+          # Silent handler
+          def handle_unmatched_action(_action, state), do: state
+      """
+      def handle_unmatched_action(action, state) do
+        require Logger
+        reducer_module = __MODULE__
+        reducer_name = __MODULE__.__reducer_name__()
+        handler = Phoenix.SessionProcess.Config.unmatched_action_handler()
+
+        case handler do
+          :log ->
+            Logger.debug("""
+            Reducer #{inspect(reducer_name)} (#{inspect(reducer_module)}) received unmatched action: #{inspect(action.type)}.
+            Consider using @action_prefix to limit which actions are routed to this reducer.
+            """)
+
+          :warn ->
+            Logger.warning("""
+            Reducer #{inspect(reducer_name)} (#{inspect(reducer_module)}) received unmatched action: #{inspect(action.type)}.
+            Consider using @action_prefix to limit which actions are routed to this reducer.
+            """)
+
+          :silent ->
+            :ok
+
+          handler when is_function(handler, 3) ->
+            handler.(action, reducer_module, reducer_name)
+
+          _ ->
+            Logger.warning(
+              "Invalid unmatched_action_handler configuration: #{inspect(handler)}. " <>
+                "Expected :log, :warn, :silent, or function/3"
+            )
+        end
+
+        state
+      end
 
       @doc """
       Handle asynchronous actions with dispatch callback.
 
       Override this function for actions that require async operations.
       The dispatch callback allows you to dispatch new actions from async context.
+
+      **Note**: If you define `handle_async/3`, you should include a catch-all clause
+      that delegates to `handle_unmatched_async/3` for actions you don't handle:
+
+          def handle_async(action, dispatch, state) do
+            handle_unmatched_async(action, dispatch, state)
+          end
 
       ## Parameters
 
@@ -1054,7 +1136,6 @@ defmodule Phoenix.SessionProcess do
       ## Returns
 
       - `cancel_fn` - A cancellation function `(() -> any())` that will be called if the action needs to be cancelled
-      - Default implementation returns `fn -> nil end` (no-op cancellation)
 
       ## Examples
 
@@ -1071,7 +1152,7 @@ defmodule Phoenix.SessionProcess do
             fn -> Task.shutdown(task, :brutal_kill) end
           end
 
-          # With meta
+          # With catch-all for unmatched actions
           def handle_async(%Action{type: "load_data"}, dispatch, state) do
             task = Task.async(fn ->
               data = API.load_data()
@@ -1081,18 +1162,84 @@ defmodule Phoenix.SessionProcess do
             fn -> Task.shutdown(task, :brutal_kill) end
           end
 
-          # Simple case: no cancellation needed
-          def handle_async(%Action{type: "log", payload: msg}, _dispatch, _state) do
-            Logger.info(msg)
+          def handle_async(action, dispatch, state) do
+            # Delegate unmatched async actions to default handler
+            handle_unmatched_async(action, dispatch, state)
+          end
+      """
+
+      @doc """
+      Handle unmatched asynchronous actions.
+
+      This callback is called when an async action doesn't match any pattern in `handle_async/3`.
+      Override this to customize behavior for unmatched async actions.
+
+      ## Parameters
+
+      - `action` - The unmatched action (Action struct)
+      - `dispatch` - Callback function to dispatch new actions
+      - `state` - The current state slice for this reducer
+
+      ## Returns
+
+      - `cancel_fn` - A no-op cancellation function `(() -> nil)` (default)
+
+      ## Default Behavior
+
+      The default implementation logs a debug message and returns a no-op cancel function.
+
+      ## Examples
+
+          # Custom handler that logs
+          def handle_unmatched_async(action, _dispatch, _state) do
+            require Logger
+            Logger.info("MyReducer ignored async action: \#{action.type}")
+            fn -> nil end
+          end
+
+          # Silent handler
+          def handle_unmatched_async(_action, _dispatch, _state) do
             fn -> nil end
           end
       """
+      def handle_unmatched_async(action, _dispatch, state) do
+        require Logger
+        reducer_module = __MODULE__
+        reducer_name = __MODULE__.__reducer_name__()
+        handler = Phoenix.SessionProcess.Config.unmatched_action_handler()
+
+        case handler do
+          :log ->
+            Logger.debug("""
+            Reducer #{inspect(reducer_name)} (#{inspect(reducer_module)}) received unmatched async action: #{inspect(action.type)}.
+            Consider using @action_prefix to limit which actions are routed to this reducer.
+            """)
+
+          :warn ->
+            Logger.warning("""
+            Reducer #{inspect(reducer_name)} (#{inspect(reducer_module)}) received unmatched async action: #{inspect(action.type)}.
+            Consider using @action_prefix to limit which actions are routed to this reducer.
+            """)
+
+          :silent ->
+            :ok
+
+          handler when is_function(handler, 3) ->
+            handler.(action, reducer_module, reducer_name)
+
+          _ ->
+            :ok
+        end
+
+        fn -> nil end
+      end
 
       # NOTE: No default implementation for handle_async/3
       # Only export handle_async/3 if explicitly defined by the reducer
       # This ensures function_exported?(module, :handle_async, 3) accurately reflects intent
 
-      defoverridable init_state: 0, handle_action: 2
+      defoverridable init_state: 0, handle_action: 2, handle_unmatched_action: 2,
+                     handle_unmatched_async: 3
     end
   end
 
