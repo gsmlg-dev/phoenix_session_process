@@ -968,6 +968,8 @@ defmodule Phoenix.SessionProcess do
       @behaviour Phoenix.SessionProcess.ReducerBehaviour
       @before_compile Phoenix.SessionProcess.ReducerCompiler
 
+      alias Phoenix.SessionProcess.Config
+
       # Reducer identity
       Module.register_attribute(__MODULE__, :name, accumulate: false)
       Module.register_attribute(__MODULE__, :action_prefix, accumulate: false)
@@ -1081,7 +1083,7 @@ defmodule Phoenix.SessionProcess do
         require Logger
         reducer_module = __MODULE__
         reducer_name = __MODULE__.__reducer_name__()
-        handler = Phoenix.SessionProcess.Config.unmatched_action_handler()
+        handler = Config.unmatched_action_handler()
 
         case handler do
           :log ->
@@ -1207,7 +1209,7 @@ defmodule Phoenix.SessionProcess do
         require Logger
         reducer_module = __MODULE__
         reducer_name = __MODULE__.__reducer_name__()
-        handler = Phoenix.SessionProcess.Config.unmatched_action_handler()
+        handler = Config.unmatched_action_handler()
 
         case handler do
           :log ->
