@@ -51,7 +51,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
 
   setup do
     session_id = "test_session_#{:rand.uniform(1_000_000)}"
-    {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+    {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
 
     on_exit(fn ->
       if SessionProcess.started?(session_id) do
@@ -137,7 +137,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
 
     test "dispatch validates action type is binary" do
       session_id = "validate_session_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
 
       assert_raise ArgumentError, ~r/Action type must be a binary string/, fn ->
         SessionProcess.dispatch(session_id, :atom_type)
@@ -148,7 +148,7 @@ defmodule Phoenix.SessionProcess.DispatchTest do
 
     test "dispatch validates meta is a keyword list" do
       session_id = "validate_meta_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
 
       assert_raise ArgumentError, ~r/Action meta must be a keyword list/, fn ->
         SessionProcess.dispatch(session_id, "test", nil, %{async: true})

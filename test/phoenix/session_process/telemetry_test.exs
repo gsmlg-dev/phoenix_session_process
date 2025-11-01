@@ -27,7 +27,10 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
 
     # Test session start telemetry
     assert {:ok, pid} =
-             SessionProcess.start(session_id, Phoenix.SessionProcess.DefaultSessionProcess)
+             SessionProcess.start_session(
+               session_id,
+               Phoenix.SessionProcess.DefaultSessionProcess
+             )
 
     assert_receive {:telemetry_event, [:phoenix, :session_process, :start], measurements, meta}
     assert meta.session_id == session_id
@@ -60,7 +63,7 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
         nil
       )
 
-    assert {:error, {:invalid_session_id, ^session_id}} = SessionProcess.start(session_id)
+    assert {:error, {:invalid_session_id, ^session_id}} = SessionProcess.start_session(session_id)
 
     assert_receive {:telemetry_event, [:phoenix, :session_process, :start_error], measurements,
                     meta},

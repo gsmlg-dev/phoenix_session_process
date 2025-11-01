@@ -6,10 +6,10 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
   test "session validation and limits" do
     # Test invalid session ID
     assert {:error, {:invalid_session_id, "invalid@session"}} =
-             SessionProcess.start("invalid@session")
+             SessionProcess.start_session("invalid@session")
 
     # Test empty session ID
-    assert {:error, {:invalid_session_id, ""}} = SessionProcess.start("")
+    assert {:error, {:invalid_session_id, ""}} = SessionProcess.start_session("")
   end
 
   test "error handling for non-existent sessions" do
@@ -45,7 +45,8 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
     session_id = "custom_module_test"
 
     # Start with custom module
-    assert {:ok, _pid} = SessionProcess.start(session_id, TestCustomSession, %{test: "data"})
+    assert {:ok, _pid} =
+             SessionProcess.start_session(session_id, TestCustomSession, %{test: "data"})
 
     # Verify custom initialization worked
     assert %{custom: true} = SessionProcess.call(session_id, :get_state)

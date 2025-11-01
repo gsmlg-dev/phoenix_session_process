@@ -93,7 +93,7 @@ defmodule MyAppWeb.PageController do
     session_id = conn.assigns.session_id
     
     # Start session process
-    {:ok, _pid} = Phoenix.SessionProcess.start(session_id)
+    {:ok, _pid} = Phoenix.SessionProcess.start_session(session_id)
     
     # Store user data
     Phoenix.SessionProcess.cast(session_id, {:put, :user_id, conn.assigns.current_user.id})
@@ -193,7 +193,7 @@ end
 
 ```elixir
 # In your controller:
-{:ok, _pid} = Phoenix.SessionProcess.start(session_id, MyApp.SessionProcess)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, MyApp.SessionProcess)
 
 # Dispatch actions (MUST use binary types)
 :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
@@ -287,13 +287,13 @@ end
 
 ```elixir
 # Start with default module
-{:ok, pid} = Phoenix.SessionProcess.start("session_123")
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123")
 
 # Start with custom module
-{:ok, pid} = Phoenix.SessionProcess.start("session_123", MyApp.CustomProcess)
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", MyApp.CustomProcess)
 
 # Start with custom module and arguments
-{:ok, pid} = Phoenix.SessionProcess.start("session_123", MyApp.CustomProcess, %{user_id: 456})
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", MyApp.CustomProcess, %{user_id: 456})
 ```
 
 ### Communication
@@ -536,7 +536,7 @@ The library provides detailed error responses with the `Phoenix.SessionProcess.E
 ### Error Handling Examples
 
 ```elixir
-case Phoenix.SessionProcess.start(session_id) do
+case Phoenix.SessionProcess.start_session(session_id) do
   {:ok, pid} ->
     # Session started successfully
     {:ok, pid}
@@ -560,7 +560,7 @@ end
 Use `Phoenix.SessionProcess.Error.message/1` to get human-readable error messages:
 
 ```elixir
-{:error, error} = Phoenix.SessionProcess.start("invalid@session")
+{:error, error} = Phoenix.SessionProcess.start_session("invalid@session")
 Phoenix.SessionProcess.Error.message(error)
 # Returns: "Invalid session ID format: \"invalid@session\""
 ```

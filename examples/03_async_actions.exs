@@ -88,7 +88,7 @@ end
 # Create a session
 session_id = "async_session_#{:rand.uniform(1_000_000)}"
 IO.puts("1. Starting session...")
-{:ok, _pid} = Phoenix.SessionProcess.start(session_id, AsyncSession)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, AsyncSession)
 IO.puts("   ✓ Session started: #{session_id}")
 
 # Subscribe to loading state

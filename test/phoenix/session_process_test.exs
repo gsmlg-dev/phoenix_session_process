@@ -28,14 +28,14 @@ defmodule Phoenix.SessionProcessTest do
   test "test start session process" do
     session_id = SessionId.generate_unique_session_id()
     assert SessionProcess.started?(session_id) == false
-    {:ok, pid} = SessionProcess.start(session_id, TestProcess, %{value: 0})
+    {:ok, pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 0})
     assert is_pid(pid)
     assert SessionProcess.started?(session_id) == true
   end
 
   test "test terminate session process" do
     session_id = SessionId.generate_unique_session_id()
-    {:ok, _pid} = SessionProcess.start(session_id, TestProcess, %{value: 0})
+    {:ok, _pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 0})
     assert SessionProcess.started?(session_id) == true
     SessionProcess.terminate(session_id)
     assert SessionProcess.started?(session_id) == false
@@ -43,13 +43,13 @@ defmodule Phoenix.SessionProcessTest do
 
   test "test call on session process" do
     session_id = SessionId.generate_unique_session_id()
-    {:ok, _pid} = SessionProcess.start(session_id, TestProcess, %{value: 123})
+    {:ok, _pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 123})
     assert SessionProcess.call(session_id, :get_value) == 123
   end
 
   test "test cast on session process" do
     session_id = SessionId.generate_unique_session_id()
-    {:ok, _pid} = SessionProcess.start(session_id, TestProcess, %{value: 0})
+    {:ok, _pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 0})
     assert SessionProcess.call(session_id, :get_value) == 0
     SessionProcess.cast(session_id, :add_one)
     assert SessionProcess.call(session_id, :get_value) == 1
@@ -64,8 +64,8 @@ defmodule Phoenix.SessionProcessTest do
       session_id1 = SessionId.generate_unique_session_id()
       session_id2 = SessionId.generate_unique_session_id()
 
-      {:ok, pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
-      {:ok, pid2} = SessionProcess.start(session_id2, TestProcess, %{value: 2})
+      {:ok, pid1} = SessionProcess.start_session(session_id1, TestProcess, %{value: 1})
+      {:ok, pid2} = SessionProcess.start_session(session_id2, TestProcess, %{value: 2})
 
       sessions = SessionProcess.list_session()
       # Check that our created sessions are in the list
@@ -79,7 +79,7 @@ defmodule Phoenix.SessionProcessTest do
 
     test "removes session when terminated" do
       session_id = SessionId.generate_unique_session_id()
-      {:ok, pid} = SessionProcess.start(session_id, TestProcess, %{value: 0})
+      {:ok, pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 0})
 
       # Check session exists in list
       sessions_before = SessionProcess.list_session()
@@ -101,8 +101,8 @@ defmodule Phoenix.SessionProcessTest do
       session_id1 = SessionId.generate_unique_session_id()
       session_id2 = SessionId.generate_unique_session_id()
 
-      {:ok, _pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
-      {:ok, _pid2} = SessionProcess.start(session_id2, TestProcess, %{value: 2})
+      {:ok, _pid1} = SessionProcess.start_session(session_id1, TestProcess, %{value: 1})
+      {:ok, _pid2} = SessionProcess.start_session(session_id2, TestProcess, %{value: 2})
 
       sessions = SessionProcess.list_sessions_by_module(TestProcess)
       # Check that our created sessions are in the list
@@ -118,10 +118,10 @@ defmodule Phoenix.SessionProcessTest do
       session_id1 = SessionId.generate_unique_session_id()
       session_id2 = SessionId.generate_unique_session_id()
 
-      {:ok, _pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
+      {:ok, _pid1} = SessionProcess.start_session(session_id1, TestProcess, %{value: 1})
 
       {:ok, _pid2} =
-        SessionProcess.start(session_id2, TestProcessLink, %{value: 2})
+        SessionProcess.start_session(session_id2, TestProcessLink, %{value: 2})
 
       test_sessions = SessionProcess.list_sessions_by_module(TestProcess)
       link_sessions = SessionProcess.list_sessions_by_module(TestProcessLink)
@@ -152,10 +152,10 @@ defmodule Phoenix.SessionProcessTest do
       session_id1 = SessionId.generate_unique_session_id()
       session_id2 = SessionId.generate_unique_session_id()
 
-      {:ok, _pid1} = SessionProcess.start(session_id1, TestProcess, %{value: 1})
+      {:ok, _pid1} = SessionProcess.start_session(session_id1, TestProcess, %{value: 1})
 
       {:ok, _pid2} =
-        SessionProcess.start(session_id2, TestProcessLink, %{value: 2})
+        SessionProcess.start_session(session_id2, TestProcessLink, %{value: 2})
 
       info = SessionProcess.session_info()
       # Check that both modules are in the list
@@ -173,7 +173,7 @@ defmodule Phoenix.SessionProcessTest do
   describe "get_session_id/0 in :process macro" do
     test "returns correct session_id from within session process" do
       session_id = SessionId.generate_unique_session_id()
-      {:ok, _pid} = SessionProcess.start(session_id, TestProcess, %{value: 0})
+      {:ok, _pid} = SessionProcess.start_session(session_id, TestProcess, %{value: 0})
 
       # Call a function that uses get_session_id internally
       result = SessionProcess.call(session_id, :get_my_session_id)
@@ -184,7 +184,7 @@ defmodule Phoenix.SessionProcessTest do
   describe "get_session_id/0 with LiveView monitoring" do
     test "returns correct session_id from within session process" do
       session_id = SessionId.generate_unique_session_id()
-      {:ok, _pid} = SessionProcess.start(session_id, TestProcessLink, %{value: 0})
+      {:ok, _pid} = SessionProcess.start_session(session_id, TestProcessLink, %{value: 0})
 
       result = SessionProcess.call(session_id, :get_my_session_id)
       assert result == session_id

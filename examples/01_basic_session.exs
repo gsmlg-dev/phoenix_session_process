@@ -41,7 +41,7 @@ end
 # Create a session
 session_id = "session_#{:rand.uniform(1_000_000)}"
 IO.puts("1. Starting session...")
-{:ok, pid} = Phoenix.SessionProcess.start(session_id, BasicSession)
+{:ok, pid} = Phoenix.SessionProcess.start_session(session_id, BasicSession)
 IO.puts("   ✓ Session started: #{session_id}")
 IO.puts("   ✓ Process PID: #{inspect(pid)}")
 

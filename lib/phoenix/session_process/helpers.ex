@@ -22,7 +22,7 @@ defmodule Phoenix.SessionProcess.Helpers do
   def start_sessions(session_ids) when is_list(session_ids) do
     session_ids
     |> Enum.map(fn session_id ->
-      Task.async(fn -> {session_id, SessionProcess.start(session_id)} end)
+      Task.async(fn -> {session_id, SessionProcess.start_session(session_id)} end)
     end)
     |> Task.await_many(5_000)
   end
@@ -159,12 +159,12 @@ defmodule Phoenix.SessionProcess.Helpers do
     result =
       if module do
         if arg do
-          SessionProcess.start(session_id, module, arg)
+          SessionProcess.start_session(session_id, module, arg)
         else
-          SessionProcess.start(session_id, module)
+          SessionProcess.start_session(session_id, module)
         end
       else
-        SessionProcess.start(session_id)
+        SessionProcess.start_session(session_id)
       end
 
     case result do

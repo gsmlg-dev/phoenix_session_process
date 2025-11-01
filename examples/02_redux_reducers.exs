@@ -82,7 +82,7 @@ end
 # Create a session
 session_id = "redux_session_#{:rand.uniform(1_000_000)}"
 IO.puts("1. Starting session with combined reducers...")
-{:ok, _pid} = Phoenix.SessionProcess.start(session_id, ReduxSession)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, ReduxSession)
 IO.puts("   ✓ Session started: #{session_id}")
 IO.puts("   ✓ Reducers registered: counter, user")
 

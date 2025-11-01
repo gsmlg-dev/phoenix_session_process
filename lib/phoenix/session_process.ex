@@ -51,7 +51,7 @@ defmodule Phoenix.SessionProcess do
           session_id = conn.assigns.session_id
 
           # Start session process
-          {:ok, _pid} = Phoenix.SessionProcess.start(session_id)
+          {:ok, _pid} = Phoenix.SessionProcess.start_session(session_id)
 
           # Store data
           Phoenix.SessionProcess.cast(session_id, {:put, :user_id, 123})
@@ -224,11 +224,20 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, pid} = Phoenix.SessionProcess.start("user_123")
-      {:error, {:already_started, pid}} = Phoenix.SessionProcess.start("user_123")
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123")
+      {:error, {:already_started, pid}} = Phoenix.SessionProcess.start_session("user_123")
   """
+  @spec start_session(binary()) :: {:ok, pid()} | {:error, term()}
+  defdelegate start_session(session_id), to: Phoenix.SessionProcess.ProcessSupervisor
+
+  @doc """
+  Deprecated: Use `start_session/1` instead.
+
+  This function is kept for backward compatibility but will be removed in a future version.
+  """
+  @deprecated "Use start_session/1 instead"
   @spec start(binary()) :: {:ok, pid()} | {:error, term()}
-  defdelegate start(session_id), to: Phoenix.SessionProcess.ProcessSupervisor, as: :start_session
+  def start(session_id), do: start_session(session_id)
 
   @doc """
   Starts a session process using a custom module.
@@ -248,19 +257,26 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, pid} = Phoenix.SessionProcess.start("user_123", MyApp.CustomSessionProcess)
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123", MyApp.CustomSessionProcess)
 
-      iex> result = Phoenix.SessionProcess.start("valid_session", Phoenix.SessionProcess.DefaultSessionProcess)
+      iex> result = Phoenix.SessionProcess.start_session("valid_session", Phoenix.SessionProcess.DefaultSessionProcess)
       iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
       true
 
-      iex> Phoenix.SessionProcess.start("invalid@session", Phoenix.SessionProcess.DefaultSessionProcess)
+      iex> Phoenix.SessionProcess.start_session("invalid@session", Phoenix.SessionProcess.DefaultSessionProcess)
       {:error, {:invalid_session_id, "invalid@session"}}
   """
+  @spec start_session(binary(), atom()) :: {:ok, pid()} | {:error, term()}
+  defdelegate start_session(session_id, module), to: Phoenix.SessionProcess.ProcessSupervisor
+
+  @doc """
+  Deprecated: Use `start_session/2` instead.
+
+  This function is kept for backward compatibility but will be removed in a future version.
+  """
+  @deprecated "Use start_session/2 instead"
   @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
-  defdelegate start(session_id, module),
-    to: Phoenix.SessionProcess.ProcessSupervisor,
-    as: :start_session
+  def start(session_id, module), do: start_session(session_id, module)
 
   @doc """
   Starts a session process with a custom module and initialization arguments.
@@ -282,23 +298,30 @@ defmodule Phoenix.SessionProcess do
   ## Examples
 
       # With map argument
-      {:ok, pid} = Phoenix.SessionProcess.start("user_123", MyApp.SessionProcess, %{user_id: 123})
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123", MyApp.SessionProcess, %{user_id: 123})
 
       # With keyword list
-      {:ok, pid} = Phoenix.SessionProcess.start("user_456", MyApp.SessionProcess, [debug: true])
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_456", MyApp.SessionProcess, [debug: true])
 
-      iex> result = Phoenix.SessionProcess.start("valid_session_with_args", Phoenix.SessionProcess.DefaultSessionProcess, %{user_id: 123})
+      iex> result = Phoenix.SessionProcess.start_session("valid_session_with_args", Phoenix.SessionProcess.DefaultSessionProcess, %{user_id: 123})
       iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
       true
 
-      iex> result = Phoenix.SessionProcess.start("valid_session_with_list", Phoenix.SessionProcess.DefaultSessionProcess, [debug: true])
+      iex> result = Phoenix.SessionProcess.start_session("valid_session_with_list", Phoenix.SessionProcess.DefaultSessionProcess, [debug: true])
       iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
       true
   """
+  @spec start_session(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
+  defdelegate start_session(session_id, module, arg), to: Phoenix.SessionProcess.ProcessSupervisor
+
+  @doc """
+  Deprecated: Use `start_session/3` instead.
+
+  This function is kept for backward compatibility but will be removed in a future version.
+  """
+  @deprecated "Use start_session/3 instead"
   @spec start(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
-  defdelegate start(session_id, module, arg),
-    to: Phoenix.SessionProcess.ProcessSupervisor,
-    as: :start_session
+  def start(session_id, module, arg), do: start_session(session_id, module, arg)
 
   @doc """
   Checks if a session process is currently running.
@@ -312,7 +335,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+      {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
       true = Phoenix.SessionProcess.started?("user_123")
       false = Phoenix.SessionProcess.started?("nonexistent")
   """
@@ -336,7 +359,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+      {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
       :ok = Phoenix.SessionProcess.terminate("user_123")
       {:error, :not_found} = Phoenix.SessionProcess.terminate("user_123")
   """
@@ -361,7 +384,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+      {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
 
       # Keep session alive
       :ok = Phoenix.SessionProcess.touch("user_123")
@@ -396,7 +419,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+      {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
       {:ok, state} = Phoenix.SessionProcess.call("user_123", :get_state)
       {:ok, :pong} = Phoenix.SessionProcess.call("user_123", :ping, 5_000)
   """
@@ -421,7 +444,7 @@ defmodule Phoenix.SessionProcess do
 
   ## Examples
 
-      {:ok, _pid} = Phoenix.SessionProcess.start("user_123")
+      {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
       :ok = Phoenix.SessionProcess.cast("user_123", {:put, :user_id, 123})
       :ok = Phoenix.SessionProcess.cast("user_123", {:delete, :old_key})
   """

@@ -441,7 +441,7 @@ defmodule MyAppWeb.PageController do
     session_id = conn.assigns.session_id
 
     # Start session
-    {:ok, _pid} = SessionProcess.start(session_id)
+    {:ok, _pid} = SessionProcess.start_session(session_id)
 
     # Dispatch actions (MUST use binary types)
     :ok = SessionProcess.dispatch(session_id, "counter.increment")
