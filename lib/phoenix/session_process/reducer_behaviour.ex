@@ -202,7 +202,7 @@ defmodule Phoenix.SessionProcess.ReducerBehaviour do
               action :: Action.t(),
               dispatch :: (binary(), any(), keyword() -> any()),
               state :: map()
-            ) :: (() -> any())
+            ) :: (-> any())
 
   @doc """
   Handle unmatched actions (optional).
@@ -260,7 +260,7 @@ defmodule Phoenix.SessionProcess.ReducerBehaviour do
               action :: Action.t(),
               dispatch :: (binary(), any(), keyword() -> any()),
               state :: map()
-            ) :: (() -> any())
+            ) :: (-> any())
 
   @optional_callbacks handle_async: 3, handle_unmatched_action: 2, handle_unmatched_async: 3
 end

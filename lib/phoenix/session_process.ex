@@ -1239,7 +1239,9 @@ defmodule Phoenix.SessionProcess do
       # Only export handle_async/3 if explicitly defined by the reducer
       # This ensures function_exported?(module, :handle_async, 3) accurately reflects intent
 
-      defoverridable init_state: 0, handle_action: 2, handle_unmatched_action: 2,
+      defoverridable init_state: 0,
+                     handle_action: 2,
+                     handle_unmatched_action: 2,
                      handle_unmatched_async: 3
     end
   end
