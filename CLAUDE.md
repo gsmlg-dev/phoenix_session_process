@@ -66,6 +66,10 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.Cleanup` - TTL-based cleanup
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
+**Behaviours** (define contracts for user modules):
+- `Phoenix.SessionProcess.ProcessBehaviour` - Behaviour for session process modules
+- `Phoenix.SessionProcess.ReducerBehaviour` - Behaviour for reducer modules
+
 **State Management**:
 - `Phoenix.SessionProcess.Action` - Internal action structure for dispatching
 - `Phoenix.SessionProcess.ReducerCompiler` - Compile-time reducer validation and code generation
@@ -111,16 +115,21 @@ The library is organized into several logical groups:
      use Phoenix.SessionProcess, :process
 
      # Define initial state with init_state/1
+     @impl true
      def init_state(_args) do
        %{count: 0, user: nil}
      end
 
      # Optional: Define combined reducers
+     @impl true
      def combined_reducers do
        [MyApp.CounterReducer, MyApp.UserReducer]
      end
    end
    ```
+
+   **Note**: The `:process` macro automatically adds `@behaviour Phoenix.SessionProcess.ProcessBehaviour`,
+   enabling compile-time warnings when callbacks are missing `@impl` annotations.
 
    **Reducer Macro Usage** (v1.0.0+):
    ```elixir
@@ -133,11 +142,13 @@ The library is organized into several logical groups:
      # OPTIONAL: Action prefix must be binary or nil
      @action_prefix "counter"
 
+     @impl true
      def init_state do
        %{count: 0}
      end
 
      # Actions are Action structs with binary types
+     @impl true
      def handle_action(action, state) do
        alias Phoenix.SessionProcess.Action
 
@@ -149,11 +160,13 @@ The library is organized into several logical groups:
            %{state | count: value}
 
          _ ->
-           state
+           # Delegate to handle_unmatched_action for logging/debugging
+           handle_unmatched_action(action, state)
        end
      end
 
      # Optional: Handle async actions, must return cancellation callback
+     @impl true
      def handle_async(action, dispatch, state) do
        alias Phoenix.SessionProcess.Action
 
@@ -171,11 +184,14 @@ The library is organized into several logical groups:
            end
 
          _ ->
-           fn -> nil end
+           handle_unmatched_async(action, dispatch, state)
        end
      end
    end
    ```
+
+   **Note**: The `:reducer` macro automatically adds `@behaviour Phoenix.SessionProcess.ReducerBehaviour`,
+   enabling compile-time warnings when callbacks are missing `@impl` annotations.
 
 2. **Phoenix.SessionProcess.Action** (lib/phoenix/session_process/action.ex:1)
    - Internal action structure for fast pattern matching
@@ -193,34 +209,50 @@ The library is organized into several logical groups:
    dispatch(session_id, "fetch", nil, async: true)  # meta: %{async: true}
    ```
 
-3. **Phoenix.SessionProcess.ReducerCompiler** (lib/phoenix/session_process/reducer_compiler.ex:1)
+3. **Phoenix.SessionProcess.ProcessBehaviour** (lib/phoenix/session_process/process_behaviour.ex:1)
+   - Behaviour defining the contract for session process modules
+   - Automatically included when using `use Phoenix.SessionProcess, :process`
+   - Defines required callback: `init_state/1`
+   - Defines optional callback: `combined_reducers/0`
+   - Enables compile-time warnings for missing `@impl` annotations
+   - See module documentation for detailed callback specifications
+
+4. **Phoenix.SessionProcess.ReducerBehaviour** (lib/phoenix/session_process/reducer_behaviour.ex:1)
+   - Behaviour defining the contract for reducer modules
+   - Automatically included when using `use Phoenix.SessionProcess, :reducer`
+   - Defines required callbacks: `init_state/0`, `handle_action/2`
+   - Defines optional callbacks: `handle_async/3`, `handle_unmatched_action/2`, `handle_unmatched_async/3`
+   - Enables compile-time warnings for missing `@impl` annotations
+   - See module documentation for detailed callback specifications
+
+5. **Phoenix.SessionProcess.ReducerCompiler** (lib/phoenix/session_process/reducer_compiler.ex:1)
    - Compile-time validation and code generation for reducers
    - Validates `@name` is an atom
    - Validates `@action_prefix` is binary, nil, or ""
    - Generates `get_name/0`, `get_action_prefix/0`, and default callbacks
 
-4. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
+6. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
    - Top-level supervisor that manages the Registry, ProcessSupervisor, and Cleanup
    - Must be added to the application's supervision tree
    - Supervises: Registry, ProcessSupervisor, and Cleanup GenServer
 
-5. **Phoenix.SessionProcess.ProcessSupervisor** (lib/phoenix/session_process/process_superviser.ex:1)
+7. **Phoenix.SessionProcess.ProcessSupervisor** (lib/phoenix/session_process/process_superviser.ex:1)
    - DynamicSupervisor that manages individual session processes
    - Handles starting, terminating, and communicating with session processes
    - Performs session validation and limit checks (max sessions, rate limiting)
    - Emits telemetry events for all operations
 
-6. **Phoenix.SessionProcess.SessionId** (lib/phoenix/session_process/session_id.ex)
+8. **Phoenix.SessionProcess.SessionId** (lib/phoenix/session_process/session_id.ex)
    - Plug that generates unique session IDs
    - Must be placed after `:fetch_session` plug in router pipeline
    - Assigns session_id to conn.assigns for use in controllers/LiveViews
 
-7. **Phoenix.SessionProcess.Cleanup** (lib/phoenix/session_process/cleanup.ex:1)
+9. **Phoenix.SessionProcess.Cleanup** (lib/phoenix/session_process/cleanup.ex:1)
    - GenServer for automatic TTL-based session cleanup
    - Schedules session expiration on creation
    - Runs cleanup tasks periodically
 
-8. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
+10. **Phoenix.SessionProcess.LiveView** (lib/phoenix/session_process/live_view.ex:1)
    - LiveView integration helpers for Redux Store API
    - `mount_store/4` - Mount with direct SessionProcess subscriptions
    - `unmount_store/1` - Unmount (optional, automatic cleanup via monitoring)

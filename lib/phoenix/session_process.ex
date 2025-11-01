@@ -965,6 +965,7 @@ defmodule Phoenix.SessionProcess do
   """
   defmacro __using__(:reducer) do
     quote do
+      @behaviour Phoenix.SessionProcess.ReducerBehaviour
       @before_compile Phoenix.SessionProcess.ReducerCompiler
 
       # Reducer identity
@@ -1246,6 +1247,7 @@ defmodule Phoenix.SessionProcess do
   # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(:process) do
     quote do
+      @behaviour Phoenix.SessionProcess.ProcessBehaviour
       use GenServer
       alias Phoenix.SessionProcess.Action
 

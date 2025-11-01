@@ -96,6 +96,10 @@ defmodule Phoenix.SessionProcess.MixProject do
           Phoenix.SessionProcess,
           Phoenix.SessionProcess.SessionId
         ],
+        Behaviours: [
+          Phoenix.SessionProcess.ProcessBehaviour,
+          Phoenix.SessionProcess.ReducerBehaviour
+        ],
         Configuration: [
           Phoenix.SessionProcess.Config
         ],
