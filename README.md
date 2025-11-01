@@ -595,10 +595,6 @@ mix run bench/session_benchmark.exs
 
 See `bench/README.md` for detailed benchmarking guide and customization options.
 
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
 ### Development Setup
 
 1. Fork the repository

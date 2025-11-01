@@ -231,6 +231,50 @@ defmodule Phoenix.SessionProcess do
   defdelegate start_session(session_id), to: Phoenix.SessionProcess.ProcessSupervisor
 
   @doc """
+  Starts a session process with options.
+
+  This allows you to customize the module and initialization arguments.
+
+  ## Parameters
+  - `session_id` - Unique binary identifier for the session
+  - `opts` - Keyword list of options:
+    - `:module` - Module implementing the session process behavior (defaults to configured module)
+    - `:args` - Initialization arguments passed to `init/1` (defaults to nil)
+
+  ## Returns
+  - `{:ok, pid}` - Session process started successfully
+  - `{:error, {:already_started, pid}}` - Session already exists
+  - `{:error, {:invalid_session_id, id}}` - Invalid session ID format
+  - `{:error, {:session_limit_reached, max}}` - Maximum sessions exceeded
+
+  ## Examples
+
+      # Use default module
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123")
+
+      # Use custom module
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123", module: MyApp.CustomSessionProcess)
+
+      # Use custom module with initialization arguments
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123",
+        module: MyApp.SessionProcess,
+        args: %{user_id: 123})
+
+      # Use default module with initialization arguments
+      {:ok, pid} = Phoenix.SessionProcess.start_session("user_456", args: [debug: true])
+
+      iex> result = Phoenix.SessionProcess.start_session("valid_session", module: Phoenix.SessionProcess.DefaultSessionProcess)
+      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
+      true
+
+      iex> result = Phoenix.SessionProcess.start_session("valid_with_args", module: Phoenix.SessionProcess.DefaultSessionProcess, args: %{user_id: 123})
+      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
+      true
+  """
+  @spec start_session(binary(), keyword()) :: {:ok, pid()} | {:error, term()}
+  defdelegate start_session(session_id, opts), to: Phoenix.SessionProcess.ProcessSupervisor
+
+  @doc """
   Deprecated: Use `start_session/1` instead.
 
   This function is kept for backward compatibility but will be removed in a future version.
@@ -240,88 +284,34 @@ defmodule Phoenix.SessionProcess do
   def start(session_id), do: start_session(session_id)
 
   @doc """
-  Starts a session process using a custom module.
+  Deprecated: Use `start_session/2` with options instead.
 
-  This allows you to use a specific session process implementation instead of
-  the default configured module.
+  ## Migration
 
-  ## Parameters
-  - `session_id` - Unique binary identifier for the session
-  - `module` - Module implementing the session process behavior
+      # Old
+      start(session_id, MyModule)
 
-  ## Returns
-  - `{:ok, pid}` - Session process started successfully
-  - `{:error, {:already_started, pid}}` - Session already exists
-  - `{:error, {:invalid_session_id, id}}` - Invalid session ID format
-  - `{:error, {:session_limit_reached, max}}` - Maximum sessions exceeded
-
-  ## Examples
-
-      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123", MyApp.CustomSessionProcess)
-
-      iex> result = Phoenix.SessionProcess.start_session("valid_session", Phoenix.SessionProcess.DefaultSessionProcess)
-      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
-      true
-
-      iex> Phoenix.SessionProcess.start_session("invalid@session", Phoenix.SessionProcess.DefaultSessionProcess)
-      {:error, {:invalid_session_id, "invalid@session"}}
+      # New
+      start_session(session_id, module: MyModule)
   """
-  @spec start_session(binary(), atom()) :: {:ok, pid()} | {:error, term()}
-  defdelegate start_session(session_id, module), to: Phoenix.SessionProcess.ProcessSupervisor
-
-  @doc """
-  Deprecated: Use `start_session/2` instead.
-
-  This function is kept for backward compatibility but will be removed in a future version.
-  """
-  @deprecated "Use start_session/2 instead"
+  @deprecated "Use start_session/2 with module: option instead"
   @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
-  def start(session_id, module), do: start_session(session_id, module)
+  def start(session_id, module), do: start_session(session_id, module: module)
 
   @doc """
-  Starts a session process with a custom module and initialization arguments.
+  Deprecated: Use `start_session/2` with options instead.
 
-  The initialization arguments are passed to the module's `init/1` callback,
-  allowing you to set up initial state or configuration.
+  ## Migration
 
-  ## Parameters
-  - `session_id` - Unique binary identifier for the session
-  - `module` - Module implementing the session process behavior
-  - `arg` - Initialization argument(s) passed to `init/1`
+      # Old
+      start(session_id, MyModule, args)
 
-  ## Returns
-  - `{:ok, pid}` - Session process started successfully
-  - `{:error, {:already_started, pid}}` - Session already exists
-  - `{:error, {:invalid_session_id, id}}` - Invalid session ID format
-  - `{:error, {:session_limit_reached, max}}` - Maximum sessions exceeded
-
-  ## Examples
-
-      # With map argument
-      {:ok, pid} = Phoenix.SessionProcess.start_session("user_123", MyApp.SessionProcess, %{user_id: 123})
-
-      # With keyword list
-      {:ok, pid} = Phoenix.SessionProcess.start_session("user_456", MyApp.SessionProcess, [debug: true])
-
-      iex> result = Phoenix.SessionProcess.start_session("valid_session_with_args", Phoenix.SessionProcess.DefaultSessionProcess, %{user_id: 123})
-      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
-      true
-
-      iex> result = Phoenix.SessionProcess.start_session("valid_session_with_list", Phoenix.SessionProcess.DefaultSessionProcess, [debug: true])
-      iex> match?({:ok, _pid}, result) or match?({:error, {:already_started, _pid}}, result)
-      true
+      # New
+      start_session(session_id, module: MyModule, args: args)
   """
-  @spec start_session(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
-  defdelegate start_session(session_id, module, arg), to: Phoenix.SessionProcess.ProcessSupervisor
-
-  @doc """
-  Deprecated: Use `start_session/3` instead.
-
-  This function is kept for backward compatibility but will be removed in a future version.
-  """
-  @deprecated "Use start_session/3 instead"
+  @deprecated "Use start_session/2 with module: and args: options instead"
   @spec start(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
-  def start(session_id, module, arg), do: start_session(session_id, module, arg)
+  def start(session_id, module, arg), do: start_session(session_id, module: module, args: arg)
 
   @doc """
   Checks if a session process is currently running.

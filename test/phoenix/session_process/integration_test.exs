@@ -46,7 +46,7 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
 
     # Start with custom module
     assert {:ok, _pid} =
-             SessionProcess.start_session(session_id, TestCustomSession, %{test: "data"})
+             SessionProcess.start_session(session_id, module: TestCustomSession, args: %{test: "data"})
 
     # Verify custom initialization worked
     assert %{custom: true} = SessionProcess.call(session_id, :get_state)

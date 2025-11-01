@@ -156,15 +156,18 @@ defmodule Phoenix.SessionProcess.Helpers do
   end
 
   defp do_create_session_with_retry(session_id, module, arg, retries) do
+    # Build options for start_session/2
+    opts =
+      []
+      |> Keyword.put_new_lazy(:module, fn -> module end)
+      |> Keyword.put_new_lazy(:args, fn -> arg end)
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
     result =
-      if module do
-        if arg do
-          SessionProcess.start_session(session_id, module, arg)
-        else
-          SessionProcess.start_session(session_id, module)
-        end
-      else
+      if opts == [] do
         SessionProcess.start_session(session_id)
+      else
+        SessionProcess.start_session(session_id, opts)
       end
 
     case result do

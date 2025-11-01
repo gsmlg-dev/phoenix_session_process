@@ -181,38 +181,43 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   end
 
   @doc """
-  Starts a session process using a specific module.
+  Starts a session process with options.
 
   ## Parameters
 
   - `session_id` - Unique identifier for the session
-  - `module` - Session process module to use
+  - `opts` - Keyword list of options:
+    - `:module` - Session process module to use (defaults to configured module)
+    - `:args` - Initialization arguments passed to `init/1` (defaults to nil)
 
   ## Returns
 
   - `{:ok, pid()}` - Session process started successfully
   - `{:error, reason}` - Failed to start session process
+
+  ## Examples
+
+      # Use default module with no args
+      start_session("session_123")
+
+      # Use custom module with default args
+      start_session("session_123", module: MyApp.SessionProcess)
+
+      # Use custom module with custom args
+      start_session("session_123", module: MyApp.SessionProcess, args: %{user_id: 123})
+
+      # Use default module with custom args
+      start_session("session_123", args: %{user_id: 123})
   """
-  def start_session(session_id, module) do
-    start_session_with_module(session_id, module)
+  def start_session(session_id, opts) when is_list(opts) do
+    module = Keyword.get(opts, :module, Config.session_process())
+    args = Keyword.get(opts, :args)
+    start_session_with_module(session_id, module, args)
   end
 
-  @doc """
-  Starts a session process using a specific module with initialization arguments.
-
-  ## Parameters
-
-  - `session_id` - Unique identifier for the session
-  - `module` - Session process module to use
-  - `arg` - Initialization arguments for the session process
-
-  ## Returns
-
-  - `{:ok, pid()}` - Session process started successfully
-  - `{:error, reason}` - Failed to start session process
-  """
-  def start_session(session_id, module, arg) do
-    start_session_with_module(session_id, module, arg)
+  # Backward compatibility for old 2-arity call with module atom
+  def start_session(session_id, module) when is_atom(module) do
+    start_session_with_module(session_id, module)
   end
 
   @doc """
