@@ -6,7 +6,7 @@ on:
       release-version:
         required: true
         description: 'The version of the release'
-        default: '0.4.0'
+        default: '1.0.0'
       git-ref:
         required: true
         description: 'The git revison of repo, branch, tag or commit'
@@ -85,8 +85,8 @@ jobs:
       - name: Install Deps
         run: |
           mix deps.get
-          sed -i 's%@version "[0-9\.]\+"%@version "${{ github.event.inputs.release-version }}"%' mix.exs
-          sed -i 's%{:phoenix_session_process, "~> [0-9\.]\+"}%{:phoenix_session_process, "~> ${{ github.event.inputs.release-version }}"}%' README.md
+          sed -i 's%@version "[0-9\.]\+\(-[a-zA-Z0-9\.]\+\)\?"%@version "${{ github.event.inputs.release-version }}"%' mix.exs
+          sed -i 's%{:phoenix_session_process, "~> [0-9\.]\+\(-[a-zA-Z0-9\.]\+\)\?"}%{:phoenix_session_process, "~> ${{ github.event.inputs.release-version }}"}%' README.md
 
       - name: Publish to hex.pm
         run: |
