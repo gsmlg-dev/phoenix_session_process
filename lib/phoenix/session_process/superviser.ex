@@ -32,11 +32,29 @@ defmodule Phoenix.SessionProcess.Supervisor do
       def start(_type, _args) do
         children = [
           # ... other children ...
-          {Phoenix.SessionProcess.Supervisor, []}
+          {Phoenix.SessionProcess, []}
+          # Or with runtime configuration:
+          {Phoenix.SessionProcess, [
+            session_process: MyApp.CustomProcess,
+            max_sessions: 20_000,
+            session_ttl: :timer.hours(2),
+            rate_limit: 150
+          ]}
         ]
 
         Supervisor.start_link(children, strategy: :one_for_one)
       end
+
+  ## Runtime Configuration
+
+  Configuration can be provided at supervisor startup, overriding application environment settings:
+
+  - `:session_process` - Default session module to use
+  - `:max_sessions` - Maximum concurrent sessions allowed
+  - `:session_ttl` - Session time-to-live in milliseconds
+  - `:rate_limit` - Maximum session creations per minute
+
+  Runtime configuration takes precedence over application environment configuration.
 
   ## Process Lifecycle
 
@@ -74,7 +92,26 @@ defmodule Phoenix.SessionProcess.Supervisor do
   end
 
   @impl true
-  def init(_init_arg) do
+  def init(init_arg) do
+    # Store runtime configuration in ETS for fast access
+    # This allows configuration to be passed at startup instead of only via application env
+    runtime_config = normalize_config(init_arg)
+
+    if runtime_config != [] do
+      # Create ETS table for runtime config (public, readable by all processes)
+      :ets.new(:phoenix_session_process_runtime_config, [
+        :set,
+        :public,
+        :named_table,
+        read_concurrency: true
+      ])
+
+      # Store each config option in ETS
+      Enum.each(runtime_config, fn {key, value} ->
+        :ets.insert(:phoenix_session_process_runtime_config, {key, value})
+      end)
+    end
+
     children = [
       {Registry, keys: :unique, name: Phoenix.SessionProcess.Registry},
       {Phoenix.SessionProcess.ProcessSupervisor, []},
@@ -84,4 +121,16 @@ defmodule Phoenix.SessionProcess.Supervisor do
 
     Supervisor.init(children, strategy: :one_for_one)
   end
+
+  # Normalize and validate configuration options
+  defp normalize_config(opts) when is_list(opts) do
+    valid_keys = [:session_process, :max_sessions, :session_ttl, :rate_limit]
+
+    opts
+    |> Enum.filter(fn {key, _value} -> key in valid_keys end)
+    |> Enum.into(%{})
+    |> Map.to_list()
+  end
+
+  defp normalize_config(_), do: []
 end

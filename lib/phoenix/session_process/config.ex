@@ -42,9 +42,32 @@ defmodule Phoenix.SessionProcess.Config do
 
   ## Runtime Configuration
 
-  Configuration values are read at runtime, allowing for dynamic updates:
+  Configuration can be provided in two ways:
 
-      Application.put_env(:phoenix_session_process, :max_sessions, 20_000)
+  ### 1. Application Environment (config files)
+
+      # config/config.exs
+      config :phoenix_session_process,
+        session_process: MyApp.SessionProcess,
+        max_sessions: 10_000
+
+  ### 2. Supervisor Start Options (runtime)
+
+      # lib/my_app/application.ex
+      def start(_type, _args) do
+        children = [
+          {Phoenix.SessionProcess, [
+            session_process: MyApp.SessionProcess,
+            max_sessions: 20_000,
+            session_ttl: :timer.hours(2),
+            rate_limit: 150
+          ]}
+        ]
+
+        Supervisor.start_link(children, strategy: :one_for_one)
+      end
+
+  **Priority**: Runtime options (passed to supervisor) take precedence over application environment.
 
   ## Environment-specific Configuration
 
@@ -89,7 +112,7 @@ defmodule Phoenix.SessionProcess.Config do
   """
   @spec session_process :: module()
   def session_process do
-    Application.get_env(:phoenix_session_process, :session_process, @default_session_process)
+    get_config(:session_process, @default_session_process)
   end
 
   @doc """
@@ -116,7 +139,7 @@ defmodule Phoenix.SessionProcess.Config do
   """
   @spec max_sessions :: integer()
   def max_sessions do
-    Application.get_env(:phoenix_session_process, :max_sessions, @default_max_sessions)
+    get_config(:max_sessions, @default_max_sessions)
   end
 
   @doc """
@@ -147,7 +170,7 @@ defmodule Phoenix.SessionProcess.Config do
   """
   @spec session_ttl :: integer()
   def session_ttl do
-    Application.get_env(:phoenix_session_process, :session_ttl, @default_session_ttl)
+    get_config(:session_ttl, @default_session_ttl)
   end
 
   @doc """
@@ -178,7 +201,7 @@ defmodule Phoenix.SessionProcess.Config do
   """
   @spec rate_limit :: integer()
   def rate_limit do
-    Application.get_env(:phoenix_session_process, :rate_limit, @default_rate_limit)
+    get_config(:rate_limit, @default_rate_limit)
   end
 
   @doc """
@@ -219,5 +242,33 @@ defmodule Phoenix.SessionProcess.Config do
       byte_size(session_id) > 0 and
       byte_size(session_id) <= 64 and
       String.match?(session_id, ~r/^[A-Za-z0-9_-]+$/)
+  end
+
+  # Private helper to get config value with proper precedence:
+  # 1. Runtime config (ETS table from supervisor start options)
+  # 2. Application environment (config files)
+  # 3. Default value
+  defp get_config(key, default) do
+    case lookup_runtime_config(key) do
+      {:ok, value} ->
+        value
+
+      :not_found ->
+        Application.get_env(:phoenix_session_process, key, default)
+    end
+  end
+
+  # Lookup value from runtime config ETS table
+  defp lookup_runtime_config(key) do
+    table = :phoenix_session_process_runtime_config
+
+    if :ets.whereis(table) != :undefined do
+      case :ets.lookup(table, key) do
+        [{^key, value}] -> {:ok, value}
+        [] -> :not_found
+      end
+    else
+      :not_found
+    end
   end
 end
