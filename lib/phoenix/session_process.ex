@@ -113,7 +113,7 @@ defmodule Phoenix.SessionProcess do
   ## API Overview
 
   ### Session Management
-  - `start/1`, `start/2`, `start/3` - Start session processes
+  - `start_session/1`, `start_session/2` - Start session processes
   - `started?/1` - Check if session exists
   - `terminate/1` - Stop session process
   - `find_session/1` - Find session by ID
@@ -273,45 +273,6 @@ defmodule Phoenix.SessionProcess do
   """
   @spec start_session(binary(), keyword()) :: {:ok, pid()} | {:error, term()}
   defdelegate start_session(session_id, opts), to: Phoenix.SessionProcess.ProcessSupervisor
-
-  @doc """
-  Deprecated: Use `start_session/1` instead.
-
-  This function is kept for backward compatibility but will be removed in a future version.
-  """
-  @deprecated "Use start_session/1 instead"
-  @spec start(binary()) :: {:ok, pid()} | {:error, term()}
-  def start(session_id), do: start_session(session_id)
-
-  @doc """
-  Deprecated: Use `start_session/2` with options instead.
-
-  ## Migration
-
-      # Old
-      start(session_id, MyModule)
-
-      # New
-      start_session(session_id, module: MyModule)
-  """
-  @deprecated "Use start_session/2 with module: option instead"
-  @spec start(binary(), atom()) :: {:ok, pid()} | {:error, term()}
-  def start(session_id, module), do: start_session(session_id, module: module)
-
-  @doc """
-  Deprecated: Use `start_session/2` with options instead.
-
-  ## Migration
-
-      # Old
-      start(session_id, MyModule, args)
-
-      # New
-      start_session(session_id, module: MyModule, args: args)
-  """
-  @deprecated "Use start_session/2 with module: and args: options instead"
-  @spec start(binary(), atom(), any()) :: {:ok, pid()} | {:error, term()}
-  def start(session_id, module, arg), do: start_session(session_id, module: module, args: arg)
 
   @doc """
   Checks if a session process is currently running.

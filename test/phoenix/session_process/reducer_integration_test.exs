@@ -210,7 +210,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
   setup do
     session_id = "test_session_#{:rand.uniform(1_000_000)}"
-    {:ok, pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+    {:ok, pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
     on_exit(fn ->
       if Process.alive?(pid) do
@@ -427,7 +427,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_invalid_string_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, InvalidStringSession)
+        SessionProcess.start_session(session_id, module: InvalidStringSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Invalid combined_reducers entry/
@@ -445,7 +445,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_invalid_int_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, InvalidIntegerSession)
+        SessionProcess.start_session(session_id, module: InvalidIntegerSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Invalid combined_reducers entry/
@@ -463,7 +463,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_invalid_tuple_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, InvalidTupleSession)
+        SessionProcess.start_session(session_id, module: InvalidTupleSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Invalid combined_reducers entry/
@@ -484,7 +484,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_dup_module_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, DuplicateModuleSession)
+        SessionProcess.start_session(session_id, module: DuplicateModuleSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Duplicate reducer name: :users/
@@ -505,7 +505,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_dup_name_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, DuplicateNameSession)
+        SessionProcess.start_session(session_id, module: DuplicateNameSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Duplicate reducer name: :users/
@@ -528,7 +528,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_non_reducer_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, NonReducerSession)
+        SessionProcess.start_session(session_id, module: NonReducerSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/not a reducer module/
@@ -546,7 +546,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       session_id = "test_nonexistent_#{:rand.uniform(1_000_000)}"
 
       {:error, {exception, _stacktrace}} =
-        SessionProcess.start_session(session_id, NonExistentModuleSession)
+        SessionProcess.start_session(session_id, module: NonExistentModuleSession)
 
       assert %ArgumentError{} = exception
       assert exception.message =~ ~r/Could not load reducer module/
@@ -564,7 +564,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "test_empty_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, EmptyListSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: EmptyListSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.count == 0
@@ -593,7 +593,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "mixed_format_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, MixedFormatSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: MixedFormatSession)
 
       state = SessionProcess.get_state(session_id)
 
@@ -644,7 +644,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "default_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, DefaultPrefixSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: DefaultPrefixSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.inventory == %{stock: 100}
@@ -670,7 +670,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "no_init_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, NoInitStateSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: NoInitStateSession)
 
       state = SessionProcess.get_state(session_id)
       # Should be %{} because NotificationsReducer has no init_state/0
@@ -700,7 +700,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "mixed_init_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, MixedInitSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: MixedInitSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.users == %{users: [], fetch_count: 0, search_query: nil}
@@ -725,7 +725,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "map_format_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, MapFormatSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: MapFormatSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.users == %{users: [], fetch_count: 0, search_query: nil}
@@ -757,7 +757,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "custom_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, CustomPrefixSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: CustomPrefixSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.shipping == %{address: nil, cost: 0}
@@ -785,7 +785,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "same_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, SamePrefixSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: SamePrefixSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.primary_users == %{users: [], fetch_count: 0, search_query: nil}
@@ -814,7 +814,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "special_chars_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, SpecialCharsSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: SpecialCharsSession)
 
       state = SessionProcess.get_state(session_id)
       assert state.special_chars_test == %{data: "test"}
@@ -841,7 +841,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "underscore_hyphen_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, UnderscoreHyphenSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: UnderscoreHyphenSession)
 
       state = SessionProcess.get_state(session_id)
       assert Map.has_key?(state, :user_profile)
@@ -875,7 +875,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "stress_test_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, StressTestSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: StressTestSession)
 
       state = SessionProcess.get_state(session_id)
 
@@ -922,7 +922,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "prefix_meta_#{:rand.uniform(1_000_000)}"
-      {:ok, pid} = SessionProcess.start_session(session_id, PrefixMetadataSession)
+      {:ok, pid} = SessionProcess.start_session(session_id, module: PrefixMetadataSession)
 
       # Access internal state to verify prefix storage
       internal_state = :sys.get_state(pid)
@@ -951,7 +951,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
       session_id = "same_prefix_diff_#{:rand.uniform(1_000_000)}"
       # Should not raise - same prefix with different names is valid
-      {:ok, _pid} = SessionProcess.start_session(session_id, SamePrefixDiffModulesSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: SamePrefixDiffModulesSession)
 
       state = SessionProcess.get_state(session_id)
       assert Map.has_key?(state, :users)
@@ -973,7 +973,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "throttle_debounce_list_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, ThrottleDebounceListSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: ThrottleDebounceListSession)
 
       # Test throttle still works
       SessionProcess.dispatch(session_id, "fetch-users")
@@ -1012,7 +1012,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "subscription_list_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, SubscriptionListSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: SubscriptionListSession)
 
       {:ok, _sub_id} =
         SessionProcess.subscribe(
@@ -1036,7 +1036,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       alias Phoenix.SessionProcess.Action
 
       session_id = "routing_explicit_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
       # Dispatch with explicit reducer targeting - only UserReducer should get it
       SessionProcess.dispatch(session_id, "add-user", "Alice", reducers: [:users])
@@ -1061,7 +1061,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
     test "routes action to multiple specified reducers" do
       session_id = "routing_multi_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
       # Dispatch to both UserReducer and CartReducer
       SessionProcess.dispatch(session_id, "add-user", "Bob", reducers: [:users, :cart])
@@ -1078,7 +1078,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
     test "no routing metadata calls all reducers" do
       session_id = "routing_all_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
       # Dispatch without routing metadata - goes to all reducers
       SessionProcess.dispatch(session_id, "add-user", "Charlie")
@@ -1108,7 +1108,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "routing_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, PrefixRoutingSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: PrefixRoutingSession)
 
       # Dispatch "user.fetch-users" - should route to UserReducer only
       SessionProcess.dispatch(session_id, "user.fetch-users")
@@ -1129,7 +1129,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
     test "explicit prefix filter overrides inferred prefix" do
       session_id = "routing_explicit_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
       # Even though action type is "cart.add", explicitly route to users reducer
       SessionProcess.dispatch(
@@ -1151,7 +1151,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
 
     test "action without dot notation goes to all reducers" do
       session_id = "routing_no_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, TestSessionProcess)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: TestSessionProcess)
 
       # Action type has no dot, so no prefix to route by - goes to all
       SessionProcess.dispatch(session_id, "add-user", "Dave")
@@ -1176,7 +1176,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "routing_custom_prefix_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, CustomPrefixSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: CustomPrefixSession)
 
       # Action with "ship.calculate-shipping" should route to ShippingReducer
       # After prefix stripping, becomes "calculate-shipping" which matches the handler
@@ -1207,7 +1207,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "routing_performance_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, CountingSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: CountingSession)
 
       # Dispatch to only users
       SessionProcess.dispatch(session_id, "test-action", nil, reducers: [:users])
@@ -1256,7 +1256,7 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       end
 
       session_id = "routing_many_#{:rand.uniform(1_000_000)}"
-      {:ok, _pid} = SessionProcess.start_session(session_id, ManyReducersSession)
+      {:ok, _pid} = SessionProcess.start_session(session_id, module: ManyReducersSession)
 
       # Dispatch with "user." prefix - should only call user1 and user2
       SessionProcess.dispatch(session_id, "user.action")

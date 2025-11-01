@@ -29,7 +29,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
   This module provides the main internal API for session process management:
 
   ### Session Lifecycle
-  - `start_session/1-3` - Start new session processes
+  - `start_session/1-2` - Start new session processes
   - `terminate_session/1` - Terminate specific session
   - `session_process_started?/1` - Check if session exists
   - `session_process_pid/1` - Get process PID for session ID
@@ -213,11 +213,6 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
     module = Keyword.get(opts, :module, Config.session_process())
     args = Keyword.get(opts, :args)
     start_session_with_module(session_id, module, args)
-  end
-
-  # Backward compatibility for old 2-arity call with module atom
-  def start_session(session_id, module) when is_atom(module) do
-    start_session_with_module(session_id, module)
   end
 
   @doc """

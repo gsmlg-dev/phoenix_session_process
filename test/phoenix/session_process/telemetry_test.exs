@@ -29,7 +29,7 @@ defmodule Phoenix.SessionProcess.TelemetryTest do
     assert {:ok, pid} =
              SessionProcess.start_session(
                session_id,
-               Phoenix.SessionProcess.DefaultSessionProcess
+               module: Phoenix.SessionProcess.DefaultSessionProcess
              )
 
     assert_receive {:telemetry_event, [:phoenix, :session_process, :start], measurements, meta}
