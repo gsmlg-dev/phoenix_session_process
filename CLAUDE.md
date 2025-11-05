@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is Phoenix.SessionProcess, an Elixir library that creates a process for each user session in Phoenix applications. All user requests go through their dedicated session process, providing session isolation and state management.
 
+**Current Version**: 1.0.0 (stable release published on hex.pm)
+**Repository**: https://github.com/gsmlg-dev/phoenix_session_process
+**Hex Package**: https://hex.pm/packages/phoenix_session_process
+
 ## Key Commands
 
 ### Development Commands
@@ -94,7 +98,7 @@ The library is organized into several logical groups:
    - Provides the `:process` and `:reducer` macros with built-in Redux Store infrastructure
 
    **Basic Functions**:
-   - `start/1-3` - Start session process
+   - `start_session/1-2` - Start session process (v1.0.0 API)
    - `call/2-3` - Synchronous call to session
    - `cast/2` - Asynchronous cast to session
    - `terminate/1` - Stop session
@@ -264,7 +268,7 @@ The library is organized into several logical groups:
 ### Process Management Flow
 
 1. Session ID generation via the SessionId plug
-2. Process creation through `Phoenix.SessionProcess.start/1-3`
+2. Process creation through `Phoenix.SessionProcess.start_session/1-2`
 3. Validation checks (session ID format, session limits)
 4. Processes are registered in `Phoenix.SessionProcess.Registry` with two entries:
    - `{session_id, pid}` for session lookup
