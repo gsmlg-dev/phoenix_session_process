@@ -35,12 +35,12 @@ defmodule Phoenix.SessionProcess.SessionId do
 
   1. First request: Generates new session ID and stores in session
   2. Subsequent requests: Retrieves existing session ID from session
-  3. Session ID is automatically available as `conn.assigns.session_id`
+  3. Session ID is stored in the Plug session, retrieve with `get_session(conn, :session_id)`
 
   ## Usage in Controllers
 
       def index(conn, _params) do
-        session_id = conn.assigns.session_id
+        session_id = get_session(conn, :session_id)
         # Use session_id to start or communicate with session process
       end
   """

@@ -4,30 +4,76 @@
 [![Hex Docs](https://img.shields.io/badge/docs-hexpm-blue.svg)](https://hexdocs.pm/phoenix_session_process/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A powerful Phoenix library that creates a dedicated process for each user session. All user requests go through their dedicated session process, providing complete session isolation, robust state management, and automatic cleanup with TTL support.
+A powerful Phoenix library that enables **reusable, composable reducers** for managing user session state. Build modular state management logic once, and reuse it across your entire application with Redux-style patterns in isolated per-session processes.
 
 ## Why Phoenix.SessionProcess?
 
-Traditional session management stores session data in external stores (Redis, database) or relies on plug-based state. **Phoenix.SessionProcess** takes a different approach by giving each user their own GenServer process, enabling:
+Traditional session management stores session data in external stores (Redis, database) or relies on plug-based state, making it difficult to create reusable state management patterns. **Phoenix.SessionProcess** solves this by combining:
 
-- **Real-time session state** without external dependencies
-- **Perfect session isolation** - no shared state between users
-- **Built-in LiveView integration** for reactive UIs
-- **Automatic memory management** with configurable TTL
-- **Enterprise-grade performance** - 10,000+ sessions/second
-- **Zero external dependencies** beyond core Phoenix/OTP
+1. **Reusable Reducers** - Write state management logic once, reuse everywhere
+2. **Redux-Style Architecture** - Familiar patterns: actions, reducers, selectors, and subscriptions
+3. **Session Isolation** - Each user gets their own GenServer process with isolated state
+4. **Zero Dependencies** - No Redis, no database, pure OTP/Elixir solution
+5. **LiveView Ready** - Built-in reactive subscriptions for real-time UIs
+
+### The Reducer Advantage
+
+Define your state management logic once as reusable reducers:
+
+```elixir
+# Define once - use everywhere
+defmodule MyApp.CartReducer do
+  use Phoenix.SessionProcess, :reducer
+
+  @name :cart
+  @action_prefix "cart"
+
+  def init_state, do: %{items: [], total: 0}
+
+  def handle_action(%Action{type: "add_item", payload: item}, state) do
+    %{state |
+      items: [item | state.items],
+      total: state.total + item.price
+    }
+  end
+end
+```
+
+Then compose multiple reducers in any session:
+```elixir
+def combined_reducers do
+  [MyApp.CartReducer, MyApp.UserReducer, MyApp.PreferencesReducer]
+end
+```
+
+**Benefits:**
+- **Modularity** - Each reducer manages one slice of state
+- **Reusability** - Share reducers across different session types
+- **Testability** - Test reducers in isolation
+- **Composability** - Combine reducers to build complex state
+- **Type Safety** - Compile-time validation of reducer structure
 
 ## Features
 
-- **Session Isolation**: Each user session runs in its own GenServer process
-- **Redux Store Integration**: Built-in Redux with actions, reducers, and selectors (NEW in v0.6.0)
-- **Reactive Subscriptions**: Subscribe to state changes with selector-based change detection
-- **Automatic Cleanup**: TTL-based automatic session cleanup and memory management
-- **LiveView Integration**: Built-in support for monitoring LiveView processes
-- **High Performance**: Optimized for 10,000+ concurrent sessions
-- **Configuration Management**: Configurable TTL, session limits, and rate limiting
+### Core Features
+- **Reusable Reducers** (v1.0.0): Define state management logic once, use across multiple session types
+- **Redux Store Architecture**: Built-in Redux with actions, reducers, selectors, and subscriptions
+- **Session Isolation**: Each user runs in their own GenServer process with isolated state
+- **Composable State**: Combine multiple reducers to build complex session state
+- **Compile-Time Validation**: Type checking for reducer names, action types, and structure
+
+### Developer Experience
+- **Familiar Patterns**: Redux-style state management developers already know
+- **Zero Dependencies**: Pure OTP/Elixir solution - no Redis, no database
+- **LiveView Integration**: Reactive subscriptions for real-time UI updates
+- **Easy Testing**: Test reducers in isolation without spinning up sessions
 - **Extensible**: Custom session process modules with full GenServer support
-- **Comprehensive Monitoring**: Built-in telemetry and performance metrics
+
+### Production Ready
+- **High Performance**: 10,000+ sessions/second creation rate
+- **Automatic Cleanup**: TTL-based session expiration and memory management
+- **Comprehensive Monitoring**: Built-in telemetry events for observability
+- **Rate Limiting**: Built-in protection against session abuse
 - **Error Handling**: Detailed error reporting and human-readable messages
 
 ## Installation
@@ -90,8 +136,8 @@ defmodule MyAppWeb.PageController do
   use MyAppWeb, :controller
 
   def index(conn, _params) do
-    session_id = conn.assigns.session_id
-    
+    session_id = get_session(conn, :session_id)
+
     # Start session process
     {:ok, _pid} = Phoenix.SessionProcess.start_session(session_id)
     
@@ -113,7 +159,8 @@ config :phoenix_session_process,
   session_process: MyApp.SessionProcess,  # Default session module
   max_sessions: 10_000,                   # Maximum concurrent sessions
   session_ttl: 3_600_000,                # Session TTL in milliseconds (1 hour)
-  rate_limit: 100                        # Sessions per minute limit
+  rate_limit: 100,                       # Sessions per minute limit
+  unmatched_action_handler: :log         # How to handle unmatched actions (:log, :warn, :silent, or function)
 ```
 
 ## Usage Examples
@@ -143,11 +190,13 @@ defmodule MyApp.SessionProcess do
 end
 ```
 
-### Redux Store API (v1.0.0)
+### Redux Store API (v1.0.0) - Reusable Reducers
 
-Phoenix.SessionProcess includes built-in Redux functionality - **SessionProcess IS the Redux store**. Use the `:reducer` macro to define reducers with binary action types.
+Phoenix.SessionProcess enables **reusable reducer patterns** - define your state management logic once, and compose it across different session types. **SessionProcess IS the Redux store**, providing familiar Redux patterns with true modularity.
 
-#### Defining Reducers
+#### Defining Reusable Reducers
+
+Create self-contained reducers that can be shared across your application:
 
 ```elixir
 defmodule MyApp.CounterReducer do
@@ -179,21 +228,53 @@ end
 defmodule MyApp.SessionProcess do
   use Phoenix.SessionProcess, :process
 
+  @impl true
   def init_state(_args) do
     %{}
   end
 
+  # Compose reducers - mix and match for different session types
+  @impl true
   def combined_reducers do
     [MyApp.CounterReducer]
   end
 end
+
+# Reuse the same reducers in different session types
+defmodule MyApp.AdminSessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init_state(_args), do: %{}
+
+  @impl true
+  def combined_reducers do
+    # Admin sessions get counter + additional audit logging
+    [MyApp.CounterReducer, MyApp.AuditReducer, MyApp.PermissionsReducer]
+  end
+end
+
+defmodule MyApp.GuestSessionProcess do
+  use Phoenix.SessionProcess, :process
+
+  @impl true
+  def init_state(_args), do: %{}
+
+  @impl true
+  def combined_reducers do
+    # Guest sessions get minimal state
+    [MyApp.CounterReducer, MyApp.PreferencesReducer]
+  end
+end
 ```
+
+**Key Benefit**: `CounterReducer` is defined once but reused across admin, guest, and regular sessions. Each session type composes different reducers to match its needs.
 
 #### Using the Redux Store
 
 ```elixir
 # In your controller:
-{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, MyApp.SessionProcess)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, module: MyApp.SessionProcess)
 
 # Dispatch actions (MUST use binary types)
 :ok = Phoenix.SessionProcess.dispatch(session_id, "counter.increment")
@@ -249,7 +330,7 @@ defmodule MyAppWeb.DashboardLive do
     )
 
     # Get initial state
-    {:ok, state} = SessionProcess.get_state(session_id)
+    state = SessionProcess.get_state(session_id)
 
     {:ok, assign(socket, session_id: session_id, state: state)}
   end
@@ -272,12 +353,13 @@ defmodule MyAppWeb.DashboardLive do
 end
 ```
 
-**Benefits of the new API:**
-- 70% less boilerplate code
-- No Redux struct to manage
-- Direct SessionProcess integration
-- Automatic subscription cleanup
-- Process-level selectors for efficient updates
+**Benefits of Reusable Reducers:**
+- **Write Once, Use Everywhere**: Define state logic once, compose across session types
+- **Modular State Management**: Each reducer manages one concern (cart, user, preferences)
+- **Easy Testing**: Test reducers independently without session overhead
+- **Compile-Time Safety**: Type validation for reducer structure and action types
+- **Familiar Patterns**: Redux architecture developers already understand
+- **Zero Boilerplate**: No Redux struct to manage, SessionProcess IS the store
 
 ---
 
@@ -290,10 +372,15 @@ end
 {:ok, pid} = Phoenix.SessionProcess.start_session("session_123")
 
 # Start with custom module
-{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", MyApp.CustomProcess)
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", module: MyApp.CustomProcess)
 
 # Start with custom module and arguments
-{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", MyApp.CustomProcess, %{user_id: 456})
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123",
+  module: MyApp.CustomProcess,
+  args: %{user_id: 456})
+
+# Start with default module but custom arguments
+{:ok, pid} = Phoenix.SessionProcess.start_session("session_123", args: %{debug: true})
 ```
 
 ### Communication
@@ -311,8 +398,15 @@ Phoenix.SessionProcess.started?("session_123")
 # Terminate session
 :ok = Phoenix.SessionProcess.terminate("session_123")
 
+# Reset session TTL (extend session lifetime)
+:ok = Phoenix.SessionProcess.touch("session_123")
+
 # List all sessions
 sessions = Phoenix.SessionProcess.list_session()
+
+# Get memory and performance statistics
+stats = Phoenix.SessionProcess.session_stats()
+# Returns: %{total_memory: ..., session_count: ..., process_info: [...]}
 ```
 
 ### Session Process Helpers
@@ -480,6 +574,7 @@ This is idiomatic Elixir and gives you full control over your state transitions.
 | `:max_sessions` | `10_000` | Maximum concurrent sessions |
 | `:session_ttl` | `3_600_000` | Session TTL in milliseconds |
 | `:rate_limit` | `100` | Sessions per minute limit |
+| `:unmatched_action_handler` | `:log` | How to handle unmatched actions (`:log`, `:warn`, `:silent`, or custom function) |
 
 ## Telemetry and Monitoring
 
