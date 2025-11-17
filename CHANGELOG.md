@@ -121,6 +121,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    - Migrate to Redux Store API (SessionProcess IS the store)
    - See `REDUX_TO_SESSIONPROCESS_MIGRATION.md` for detailed migration
 
+### Documentation
+
+- **Emphasized reusable reducers as core motivation**
+  - Updated README.md, CLAUDE.md to highlight reducer composition patterns
+  - Added "Reducer Reusability - Core Value" section with concrete examples
+  - Demonstrated how reducers are defined once and reused across session types
+  - Included examples: UserSessionProcess, AdminSessionProcess, GuestSessionProcess
+- **Added CODE_PROMPT.md for Claude Code assistance**
+  - Comprehensive 700+ line guide for AI-assisted development
+  - Task-based examples covering setup, reducers, controllers, LiveView, testing
+  - Common mistakes section with wrong/correct patterns
+  - Best practices and troubleshooting guidance
+- **Fixed session_id retrieval documentation**
+  - Corrected all examples from `conn.assigns.session_id` to `get_session(conn, :session_id)`
+  - Updated SessionId plug documentation to show correct storage location
+  - Fixed across README.md, CLAUDE.md, CODE_PROMPT.md, and source code
+- **Clarified session lifecycle management**
+  - Documented that sessions should start in router hooks or login controllers
+  - Updated LiveView examples to check for existing sessions, not start them
+  - Added router hook and login controller examples
+- **Fixed API signatures**
+  - Corrected `start_session` examples to use keyword arguments (module:, args:)
+  - Added documentation for missing functions: `touch/1` and `session_stats/0`
+  - Updated all function signatures to match actual implementation
+- **Enhanced reducer documentation**
+  - Added behaviour contract documentation (ProcessBehaviour, ReducerBehaviour)
+  - Explained compile-time validation for reducer structure
+  - Showed @impl annotations for callbacks
+
 ### Notes
 
 - All changes are breaking but migrations are straightforward

@@ -301,7 +301,7 @@ Add to `mix.exs` for development:
 defp deps do
   [
     {:benchee, "~> 1.0", only: :dev},
-    {:phoenix_session_process, "~> 0.4.0"}
+    {:phoenix_session_process, "~> 1.0"}
   ]
 end
 ```

@@ -15,10 +15,12 @@ defmodule AsyncReducer do
   @name :data
   @action_prefix "data"
 
+  @impl true
   def init_state do
     %{items: [], loading: false, error: nil}
   end
 
+  @impl true
   def handle_action(action, state) do
     alias Phoenix.SessionProcess.Action
 
@@ -41,6 +43,7 @@ defmodule AsyncReducer do
   end
 
   # Handle async actions - MUST return cancellation callback
+  @impl true
   def handle_async(action, dispatch, _state) do
     alias Phoenix.SessionProcess.Action
 

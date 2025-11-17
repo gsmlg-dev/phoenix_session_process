@@ -16,10 +16,12 @@ defmodule CounterReducer do
   @name :counter
   @action_prefix "counter"
 
+  @impl true
   def init_state do
     %{count: 0}
   end
 
+  @impl true
   def handle_action(action, state) do
     alias Phoenix.SessionProcess.Action
 
@@ -46,10 +48,12 @@ defmodule UserReducer do
   @name :user
   @action_prefix "user"
 
+  @impl true
   def init_state do
     %{current_user: nil, logged_in: false}
   end
 
+  @impl true
   def handle_action(action, state) do
     alias Phoenix.SessionProcess.Action
 
@@ -70,10 +74,12 @@ end
 defmodule ReduxSession do
   use Phoenix.SessionProcess, :process
 
+  @impl true
   def init_state(_arg) do
     %{}
   end
 
+  @impl true
   def combined_reducers do
     [CounterReducer, UserReducer]
   end
@@ -82,7 +88,7 @@ end
 # Create a session
 session_id = "redux_session_#{:rand.uniform(1_000_000)}"
 IO.puts("1. Starting session with combined reducers...")
-{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, ReduxSession)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, module: ReduxSession)
 IO.puts("   ✓ Session started: #{session_id}")
 IO.puts("   ✓ Reducers registered: counter, user")
 
