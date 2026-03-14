@@ -23,7 +23,7 @@ defmodule Phoenix.SessionProcess.Logger do
   You can filter events by log level:
 
       # Only log errors and warnings
-      Phoenix.SessionProcess.Logger.attach_default_logger(level: :warn)
+      Phoenix.SessionProcess.Logger.attach_default_logger(level: :warning)
 
       # Only log session lifecycle events
       Phoenix.SessionProcess.Logger.attach_session_events(level: :info)
@@ -40,7 +40,7 @@ defmodule Phoenix.SessionProcess.Logger do
 
   require Logger
 
-  @type level :: :debug | :info | :warn | :error
+  @type level :: :debug | :info | :warning | :error
 
   @doc """
   Attaches handlers for all Phoenix.SessionProcess telemetry events.
@@ -250,8 +250,10 @@ defmodule Phoenix.SessionProcess.Logger do
     end
   end
 
+  defp handle_worker_event(_, _, _, _), do: :ok
+
   defp handle_session_event(
-         [:phoenix, :session_process, :session_start],
+         [:phoenix, :session_process, :start],
          _measurements,
          metadata,
          level
@@ -263,16 +265,18 @@ defmodule Phoenix.SessionProcess.Logger do
   end
 
   defp handle_session_event(
-         [:phoenix, :session_process, :session_end],
+         [:phoenix, :session_process, :stop],
          _measurements,
          metadata,
          level
        ) do
     if should_log?(level, metadata) do
       session_id = Map.get(metadata, :session_id, "unknown")
-      Logger.info("Session end: #{session_id}")
+      Logger.info("Session stop: #{session_id}")
     end
   end
+
+  defp handle_session_event(_, _, _, _), do: :ok
 
   defp handle_communication_event(
          [:phoenix, :session_process, :call],
@@ -326,6 +330,8 @@ defmodule Phoenix.SessionProcess.Logger do
     end
   end
 
+  defp handle_communication_event(_, _, _, _), do: :ok
+
   defp handle_cleanup_event(
          [:phoenix, :session_process, :auto_cleanup],
          _measurements,
@@ -363,13 +369,15 @@ defmodule Phoenix.SessionProcess.Logger do
     end
   end
 
-  defp should_log?(_event_level, _metadata) do
-    configured_level = Application.get_env(:phoenix_session_process, :telemetry_log_level, :info)
-    level_priority(configured_level) <= level_priority(:info)
+  defp handle_cleanup_event(_, _, _, _), do: :ok
+
+  defp should_log?(event_level, _metadata) do
+    configured_level = Application.get_env(:phoenix_session_process, :telemetry_log_level, :debug)
+    level_priority(event_level) >= level_priority(configured_level)
   end
 
   defp level_priority(:debug), do: 0
   defp level_priority(:info), do: 1
-  defp level_priority(:warn), do: 2
+  defp level_priority(:warning), do: 2
   defp level_priority(:error), do: 3
 end
