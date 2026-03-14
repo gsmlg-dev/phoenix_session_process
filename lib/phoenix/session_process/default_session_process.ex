@@ -139,18 +139,13 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   use Phoenix.SessionProcess, :process
 
   @impl true
-  def init(_init_arg) do
-    {:ok, %{}}
+  def init_state(_init_arg) do
+    %{}
   end
 
   @impl true
   def handle_call(:ping, _from, state) do
     {:reply, :pong, state}
-  end
-
-  @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
   end
 
   @impl true
@@ -160,18 +155,23 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   end
 
   @impl true
+  def handle_call(:get_state, _from, state) do
+    {:reply, state.app_state, state}
+  end
+
+  @impl true
   def handle_call(any, _from, state) do
     {:reply, any, state}
   end
 
   @impl true
   def handle_cast({:put, key, value}, state) do
-    {:noreply, Map.put(state, key, value)}
+    {:noreply, %{state | app_state: Map.put(state.app_state, key, value)}}
   end
 
   @impl true
   def handle_cast({:delete, key}, state) do
-    {:noreply, Map.delete(state, key)}
+    {:noreply, %{state | app_state: Map.delete(state.app_state, key)}}
   end
 
   @impl true
