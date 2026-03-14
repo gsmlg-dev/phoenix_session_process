@@ -15,7 +15,7 @@ This is Phoenix.SessionProcess, an Elixir library that enables **reusable, compo
 - **Session Isolation**: Each user gets their own process with isolated state
 - **Zero Dependencies**: Pure OTP/Elixir solution - no Redis, no database
 
-**Current Version**: 1.0.0 (stable release published on hex.pm)
+**Current Version**: 1.0.0-rc.2
 **Repository**: https://github.com/gsmlg-dev/phoenix_session_process
 **Hex Package**: https://hex.pm/packages/phoenix_session_process
 
