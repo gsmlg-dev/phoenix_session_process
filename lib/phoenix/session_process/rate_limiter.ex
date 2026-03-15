@@ -64,7 +64,26 @@ defmodule Phoenix.SessionProcess.RateLimiter do
   """
   @spec check_rate_limit() :: :ok | {:error, :rate_limit_exceeded}
   def check_rate_limit do
-    GenServer.call(__MODULE__, :check_rate_limit)
+    start_time = System.monotonic_time()
+    now = System.system_time(:millisecond)
+    rate_limit = Config.rate_limit()
+    window_start = now - @window_size_ms
+
+    recent_count =
+      :ets.select_count(@table_name, [
+        {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
+      ])
+
+    duration = System.monotonic_time() - start_time
+    Telemetry.emit_rate_limit_check(recent_count, rate_limit, duration: duration)
+
+    if recent_count < rate_limit do
+      :ets.insert(@table_name, {make_ref(), now})
+      :ok
+    else
+      Telemetry.emit_rate_limit_exceeded(recent_count, rate_limit, duration: duration)
+      {:error, :rate_limit_exceeded}
+    end
   end
 
   @doc """
@@ -104,36 +123,6 @@ defmodule Phoenix.SessionProcess.RateLimiter do
 
     schedule_cleanup()
     {:ok, %{}}
-  end
-
-  @impl true
-  def handle_call(:check_rate_limit, _from, state) do
-    start_time = System.monotonic_time()
-    now = System.system_time(:millisecond)
-    rate_limit = Config.rate_limit()
-    window_start = now - @window_size_ms
-
-    # Count sessions created in the last minute
-    recent_count =
-      :ets.select_count(@table_name, [
-        {{:_, :"$1"}, [{:>=, :"$1", window_start}], [true]}
-      ])
-
-    duration = System.monotonic_time() - start_time
-
-    Telemetry.emit_rate_limit_check(recent_count, rate_limit, duration: duration)
-
-    result =
-      if recent_count < rate_limit do
-        # Record this creation
-        :ets.insert(@table_name, {make_ref(), now})
-        :ok
-      else
-        Telemetry.emit_rate_limit_exceeded(recent_count, rate_limit, duration: duration)
-        {:error, :rate_limit_exceeded}
-      end
-
-    {:reply, result, state}
   end
 
   @impl true
