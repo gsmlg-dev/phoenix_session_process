@@ -1434,20 +1434,6 @@ defmodule Phoenix.SessionProcess do
       # ========================================================================
 
       @impl true
-      def handle_call({:dispatch_action, action}, _from, state) do
-        new_state = dispatch_with_reducers(action, state)
-
-        # Add action to history
-        new_state_with_history = %{
-          new_state
-          | _redux_history:
-              add_to_history(action, new_state._redux_history, new_state._redux_max_history)
-        }
-
-        {:reply, {:ok, new_state_with_history.app_state}, new_state_with_history}
-      end
-
-      @impl true
       def handle_cast({:dispatch_action, action}, state) do
         # Check if action has been cancelled
         cancel_ref = get_in(action.meta, [:cancel_ref])
@@ -1459,6 +1445,13 @@ defmodule Phoenix.SessionProcess do
         else
           # Process action normally
           new_state = dispatch_with_reducers(action, state)
+
+          new_state = %{
+            new_state
+            | _redux_history:
+                add_to_history(action, new_state._redux_history, new_state._redux_max_history)
+          }
+
           {:noreply, new_state}
         end
       end
@@ -1845,14 +1838,8 @@ defmodule Phoenix.SessionProcess do
       end
 
       defp async_action?(%Action{} = action) do
-        # Check if action has async metadata flag
         Action.async?(action)
       end
-
-      defp async_action?(%{type: type}) when is_binary(type),
-        do: String.ends_with?(type, "_async")
-
-      defp async_action?(_), do: false
 
       # Helper function for async dispatch callback
       # Accepts: dispatch(type, payload \\ nil, meta \\ [])
