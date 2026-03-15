@@ -285,7 +285,7 @@ defmodule Phoenix.SessionProcess.Config do
   - Can only contain alphanumeric characters, underscores, and hyphens
   - This ensures URL-safety and prevents injection attacks
   """
-  @spec valid_session_id?(binary()) :: boolean()
+  @spec valid_session_id?(any()) :: boolean()
   def valid_session_id?(session_id) do
     is_binary(session_id) and
       byte_size(session_id) > 0 and
