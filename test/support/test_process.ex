@@ -5,19 +5,19 @@ defmodule TestProcess do
   This module provides a simple session process implementation used in tests
   to verify session process functionality, state management, and lifecycle operations.
 
-  Uses standard GenServer state management (no Agent).
+  Uses the Redux infrastructure provided by the :process macro.
   """
 
   use Phoenix.SessionProcess, :process
 
   @impl true
-  def init(init_arg \\ %{}) do
-    {:ok, Map.put_new(init_arg, :value, 0)}
+  def init_state(init_arg \\ %{}) do
+    Map.put_new(init_arg, :value, 0)
   end
 
   @impl true
   def handle_call(:get_value, _from, state) do
-    {:reply, Map.get(state, :value), state}
+    {:reply, Map.get(state.app_state, :value), state}
   end
 
   @impl true
@@ -26,18 +26,23 @@ defmodule TestProcess do
   end
 
   @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
+  def handle_call(msg, from, state) do
+    super(msg, from, state)
   end
 
   @impl true
   def handle_cast(:add_one, state) do
-    value = Map.get(state, :value, 0)
-    {:noreply, Map.put(state, :value, value + 1)}
+    value = Map.get(state.app_state, :value, 0)
+    {:noreply, %{state | app_state: Map.put(state.app_state, :value, value + 1)}}
   end
 
   @impl true
   def handle_cast({:put, key, value}, state) do
-    {:noreply, Map.put(state, key, value)}
+    {:noreply, %{state | app_state: Map.put(state.app_state, key, value)}}
+  end
+
+  @impl true
+  def handle_cast(msg, state) do
+    super(msg, state)
   end
 end

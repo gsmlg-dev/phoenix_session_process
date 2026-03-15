@@ -29,16 +29,19 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
     defmodule TestCustomSession do
       use Phoenix.SessionProcess, :process
 
-      def init(_init_arg) do
-        {:ok, %{custom: true}}
+      @impl true
+      def init_state(_init_arg) do
+        %{custom: true}
       end
 
+      @impl true
       def handle_call(:custom_call, _from, state) do
-        {:reply, {:custom_response, state}, state}
+        {:reply, {:custom_response, state.app_state}, state}
       end
 
-      def handle_call(:get_state, _from, state) do
-        {:reply, state, state}
+      @impl true
+      def handle_call(msg, from, state) do
+        super(msg, from, state)
       end
     end
 
@@ -52,7 +55,7 @@ defmodule Phoenix.SessionProcess.IntegrationTest do
              )
 
     # Verify custom initialization worked
-    assert %{custom: true} = SessionProcess.call(session_id, :get_state)
+    assert %{custom: true} = SessionProcess.get_state(session_id)
     assert {:custom_response, %{custom: true}} = SessionProcess.call(session_id, :custom_call)
 
     # Clean up
