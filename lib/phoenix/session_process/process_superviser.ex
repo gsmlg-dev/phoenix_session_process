@@ -453,7 +453,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
   defp check_max_sessions do
     max_sessions = Config.max_sessions()
-    current_sessions = Registry.count(SessionRegistry)
+    %{active: current_sessions} = DynamicSupervisor.count_children(__MODULE__)
 
     if current_sessions < max_sessions do
       :ok
