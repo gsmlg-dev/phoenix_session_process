@@ -436,6 +436,10 @@ defmodule Phoenix.SessionProcess do
   """
   @spec list_session :: [{binary(), pid()}]
   def list_session do
+    # Filter to only session_id-keyed entries (binary strings).
+    # Pid-keyed entries (for module tracking) are excluded by the is_binary guard.
+    # This relies on session IDs always being binary strings, which is enforced
+    # by valid_session_id?/1 in Config.
     Registry.select(SessionRegistry, [
       {{:"$1", :"$2", :_}, [{:is_binary, :"$1"}], [{{:"$1", :"$2"}}]}
     ])
