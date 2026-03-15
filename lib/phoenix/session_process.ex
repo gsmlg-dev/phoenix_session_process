@@ -342,11 +342,15 @@ defmodule Phoenix.SessionProcess do
 
       # Session TTL is reset to full duration
   """
-  @spec touch(binary()) :: :ok | {:error, :not_found}
+  @spec touch(binary()) :: :ok | {:error, :not_found | {:cleanup_unavailable, binary()}}
   def touch(session_id) do
     if started?(session_id) do
-      Cleanup.refresh_session(session_id)
-      :ok
+      try do
+        Cleanup.refresh_session(session_id)
+        :ok
+      catch
+        :exit, _ -> {:error, {:cleanup_unavailable, session_id}}
+      end
     else
       {:error, :not_found}
     end
