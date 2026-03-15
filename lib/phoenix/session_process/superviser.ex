@@ -112,6 +112,13 @@ defmodule Phoenix.SessionProcess.Supervisor do
       end)
     end
 
+    # Create the activity tracker ETS table here in the Supervisor process,
+    # which is more stable than creating it in the Cleanup process.
+    # If Cleanup crashes and restarts, the ETS table persists because it's
+    # owned by the Supervisor. The ActivityTracker.init() call in Cleanup
+    # will be a no-op since the table already exists.
+    Phoenix.SessionProcess.ActivityTracker.init()
+
     children = [
       {Registry, keys: :unique, name: Phoenix.SessionProcess.Registry},
       {Phoenix.SessionProcess.ProcessSupervisor, []},
