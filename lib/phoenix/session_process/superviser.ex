@@ -99,12 +99,15 @@ defmodule Phoenix.SessionProcess.Supervisor do
 
     if runtime_config != [] do
       # Create ETS table for runtime config (public, readable by all processes)
-      :ets.new(:phoenix_session_process_runtime_config, [
-        :set,
-        :public,
-        :named_table,
-        read_concurrency: true
-      ])
+      # Guard against table already existing (e.g., supervisor restart)
+      if :ets.whereis(:phoenix_session_process_runtime_config) == :undefined do
+        :ets.new(:phoenix_session_process_runtime_config, [
+          :set,
+          :public,
+          :named_table,
+          read_concurrency: true
+        ])
+      end
 
       # Store each config option in ETS
       Enum.each(runtime_config, fn {key, value} ->
@@ -124,7 +127,13 @@ defmodule Phoenix.SessionProcess.Supervisor do
 
   # Normalize and validate configuration options
   defp normalize_config(opts) when is_list(opts) do
-    valid_keys = [:session_process, :max_sessions, :session_ttl, :rate_limit]
+    valid_keys = [
+      :session_process,
+      :max_sessions,
+      :session_ttl,
+      :rate_limit,
+      :unmatched_action_handler
+    ]
 
     opts
     |> Enum.filter(fn {key, _value} -> key in valid_keys end)
