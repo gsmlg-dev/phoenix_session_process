@@ -136,6 +136,12 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
       config :phoenix_session_process,
         session_process: MyApp.SessionProcess
   """
+
+  # Suppress Dialyzer warning about pattern_match_cov in macro-generated init/1.
+  # When combined_reducers/0 returns [], the Enum.reduce pattern can never match,
+  # but this is expected behavior for modules without reducers.
+  @dialyzer :no_match
+
   use Phoenix.SessionProcess, :process
 
   @impl true
