@@ -6,24 +6,18 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
   defmodule TestProcessWithArg do
     use Phoenix.SessionProcess, :process
 
-    def init(arg) do
-      {:ok, %{initialized_with: arg}}
-    end
-
-    def handle_call(:get_state, _from, state) do
-      {:reply, state, state}
+    @impl true
+    def init_state(arg) do
+      %{initialized_with: arg}
     end
   end
 
   defmodule TestProcessLinkWithArg do
     use Phoenix.SessionProcess, :process
 
-    def init(arg) do
-      {:ok, %{initialized_with: arg}}
-    end
-
-    def handle_call(:get_state, _from, state) do
-      {:reply, state, state}
+    @impl true
+    def init_state(arg) do
+      %{initialized_with: arg}
     end
   end
 
@@ -35,7 +29,7 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       {:ok, _pid} =
         SessionProcess.start_session(session_id, module: TestProcessWithArg, args: init_arg)
 
-      state = SessionProcess.call(session_id, :get_state)
+      state = SessionProcess.get_state(session_id)
       assert state.initialized_with == init_arg
 
       SessionProcess.terminate(session_id)
@@ -48,7 +42,7 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       {:ok, _pid} =
         SessionProcess.start_session(session_id, module: TestProcessLinkWithArg, args: init_arg)
 
-      state = SessionProcess.call(session_id, :get_state)
+      state = SessionProcess.get_state(session_id)
       assert state.initialized_with == init_arg
 
       SessionProcess.terminate(session_id)
@@ -69,8 +63,8 @@ defmodule Phoenix.SessionProcess.MacroConsistencyTest do
       {:ok, _} =
         SessionProcess.start_session(session_id_2, module: TestProcessLinkWithArg, args: init_arg)
 
-      state1 = SessionProcess.call(session_id_1, :get_state)
-      state2 = SessionProcess.call(session_id_2, :get_state)
+      state1 = SessionProcess.get_state(session_id_1)
+      state2 = SessionProcess.get_state(session_id_2)
 
       assert state1.initialized_with == init_arg
       assert state2.initialized_with == init_arg

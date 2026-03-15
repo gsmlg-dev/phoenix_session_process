@@ -23,7 +23,7 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
 
   ### Call Operations
   - `:ping` - Returns `:pong` (useful for health checks)
-  - `:get_state` - Returns the complete session state map
+  - `:get_state` - Returns the application state (handled by macro)
   - `{:sleep, duration}` - Sleeps for specified milliseconds (testing)
   - Any other request - Echoes the request back
 
@@ -41,8 +41,8 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
       Phoenix.SessionProcess.cast(session_id, {:put, :preferences, %{theme: :dark}})
 
       # Retrieve session state
-      {:ok, state} = Phoenix.SessionProcess.call(session_id, :get_state)
-      # => {:ok, %{user_id: 123, preferences: %{theme: :dark}}}
+      state = Phoenix.SessionProcess.get_state(session_id)
+      # => %{user_id: 123, preferences: %{theme: :dark}}
 
       # Delete data from session
       Phoenix.SessionProcess.cast(session_id, {:delete, :user_id})
@@ -50,12 +50,12 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   ### Health Check
 
       # Check if session process is responsive
-      {:ok, :pong} = Phoenix.SessionProcess.call(session_id, :ping)
+      :pong = Phoenix.SessionProcess.call(session_id, :ping)
 
   ### Testing
 
       # Simulate slow operations
-      {:ok, :ok} = Phoenix.SessionProcess.call(session_id, {:sleep, 1000})
+      :ok = Phoenix.SessionProcess.call(session_id, {:sleep, 1000})
 
   ## Default Session Module
 
@@ -155,13 +155,8 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcess do
   end
 
   @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, state.app_state, state}
-  end
-
-  @impl true
-  def handle_call(any, _from, state) do
-    {:reply, any, state}
+  def handle_call(msg, from, state) do
+    super(msg, from, state)
   end
 
   @impl true
