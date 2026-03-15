@@ -191,12 +191,19 @@ defmodule Phoenix.SessionProcess.Error do
   end
 
   def message({:error, {:call_failed, {module, function, args, reason}}}) do
-    "Call failed: #{inspect(module)}.#{function}/#{tuple_size(args) + 1} with reason: #{inspect(reason)}"
+    "Call failed: #{inspect(module)}.#{function}/#{safe_arity(args)} with reason: #{inspect(reason)}"
   end
 
   def message({:error, {:cast_failed, {module, function, args, reason}}}) do
-    "Cast failed: #{inspect(module)}.#{function}/#{tuple_size(args) + 1} with reason: #{inspect(reason)}"
+    "Cast failed: #{inspect(module)}.#{function}/#{safe_arity(args)} with reason: #{inspect(reason)}"
   end
+
+  def message({:error, reason}) do
+    "Session process error: #{inspect(reason)}"
+  end
+
+  defp safe_arity(args) when is_tuple(args), do: tuple_size(args) + 1
+  defp safe_arity(_args), do: "?"
 
   @doc """
   Converts a generic error to a SessionProcess error when possible.
