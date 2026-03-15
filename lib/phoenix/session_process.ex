@@ -1270,17 +1270,20 @@ defmodule Phoenix.SessionProcess do
       end
 
       def get_session_id do
-        current_pid = self()
-
-        case Registry.select(unquote(SessionRegistry), [
-               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
-             ])
-             |> Enum.at(0) do
-          {session_id, _pid} ->
-            session_id
-
+        case Process.get(:session_id) do
           nil ->
-            raise "Session process not yet registered or registration failed"
+            # Fallback to registry lookup
+            session_id = lookup_own_session_id()
+
+            if session_id do
+              Process.put(:session_id, session_id)
+              session_id
+            else
+              raise "Session process not yet registered or registration failed"
+            end
+
+          session_id ->
+            session_id
         end
       end
 
@@ -1339,7 +1342,23 @@ defmodule Phoenix.SessionProcess do
           _async_cancel_fns: %{}
         }
 
+        # Cache session_id in process dictionary for O(1) lookup
+        session_id = lookup_own_session_id()
+        if session_id, do: Process.put(:session_id, session_id)
+
         {:ok, state}
+      end
+
+      defp lookup_own_session_id do
+        current_pid = self()
+
+        case Registry.select(unquote(SessionRegistry), [
+               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+             ])
+             |> Enum.at(0) do
+          {session_id, _pid} -> session_id
+          nil -> nil
+        end
       end
 
       @doc """
