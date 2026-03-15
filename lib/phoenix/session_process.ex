@@ -368,6 +368,22 @@ defmodule Phoenix.SessionProcess do
   - `{:error, {:session_not_found, id}}` - Session does not exist
   - `{:error, {:timeout, timeout}}` - Request timed out
 
+  ## Return Value Conventions
+
+  The return value is whatever the session process's `handle_call/3` callback
+  replies with. The built-in handlers injected by `use Phoenix.SessionProcess, :process`
+  wrap their replies in `{:ok, result}` tuples:
+
+  - `:get_state` — returns `{:ok, state}`
+  - `{:select_state, selector}` — returns `{:ok, selected_value}`
+  - `{:subscribe_with_selector, selector, event, pid}` — returns `{:ok, subscription_id}`
+  - `{:unsubscribe, subscription_id}` — returns `{:ok, :unsubscribed}`
+
+  Custom `handle_call/3` implementations in your session process module should
+  follow this `{:ok, result}` convention for consistency, especially if the
+  results will be consumed through higher-level helpers like `get_state/2` or
+  `select_state/2`.
+
   ## Examples
 
       {:ok, _pid} = Phoenix.SessionProcess.start_session("user_123")
