@@ -23,7 +23,7 @@ IO.puts(String.duplicate("=", 50))
 IO.puts("Warming up...")
 
 for _i <- 1..100 do
-  SessionProcess.start("warmup_#{System.unique_integer()}")
+  SessionProcess.start_session("warmup_#{System.unique_integer()}")
 end
 
 # Clear warmup sessions
@@ -64,7 +64,7 @@ IO.puts(String.duplicate("-", 35))
 
 # Create test sessions
 Enum.each(1..100, fn i ->
-  SessionProcess.start("comm_test_#{i}")
+  SessionProcess.start_session("comm_test_#{i}")
 end)
 
 # Benchmark calls vs casts
@@ -110,7 +110,7 @@ Enum.each(memory_tests, fn count ->
 
   # Create sessions
   Enum.each(1..count, fn i ->
-    SessionProcess.start("memory_test_#{i}")
+    SessionProcess.start_session("memory_test_#{i}")
   end)
 
   # Measure memory
@@ -129,7 +129,7 @@ IO.puts(String.duplicate("-", 32))
 
 # Create sessions for lookup tests
 Enum.each(1..1000, fn i ->
-  SessionProcess.start("lookup_test_#{i}")
+  SessionProcess.start_session("lookup_test_#{i}")
 end)
 
 lookup_tests = [100, 1000, 5000]
@@ -161,13 +161,13 @@ Enum.each(error_tests, fn {scenario, test_id} ->
     :timer.tc(fn ->
       case scenario do
         :invalid_session_id ->
-          SessionProcess.start(test_id)
+          SessionProcess.start_session(test_id)
 
         :session_not_found ->
           SessionProcess.call(test_id, :ping)
 
         :timeout_scenario ->
-          SessionProcess.start(test_id)
+          SessionProcess.start_session(test_id)
           SessionProcess.call(test_id, :slow_operation, 1)
       end
     end)
@@ -181,7 +181,7 @@ IO.puts(String.duplicate("-", 23))
 
 1..10_000
 |> Enum.each(fn i ->
-  SessionProcess.start("cleanup_test_#{i}")
+  SessionProcess.start_session("cleanup_test_#{i}")
 end)
 
 session_count = length(SessionProcess.list_session())
@@ -238,7 +238,7 @@ stress_test = fn concurrent_ops ->
         Task.async(fn ->
           session_id = "stress_#{i}_#{System.unique_integer()}"
 
-          case SessionProcess.start(session_id) do
+          case SessionProcess.start_session(session_id) do
             {:ok, _pid} ->
               SessionProcess.call(session_id, :ping)
               SessionProcess.terminate(session_id)

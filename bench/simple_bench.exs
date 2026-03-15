@@ -25,7 +25,7 @@ IO.puts("\n1. Session Creation (100 sessions)")
 {time, results} =
   :timer.tc(fn ->
     Enum.map(1..100, fn i ->
-      SessionProcess.start("quick_test_#{i}")
+      SessionProcess.start_session("quick_test_#{i}")
     end)
   end)
 
@@ -49,7 +49,7 @@ IO.puts("\n2. Session Communication (50 calls)")
     |> Task.await_many(5000)
   end)
 
-call_success = Enum.count(call_results, &match?({:ok, _}, &1))
+call_success = Enum.count(call_results, &(&1 == :pong))
 
 IO.puts(
   "#{call_success}/50 calls completed in #{call_time / 1000}ms (#{Float.round(call_success / (call_time / 1_000_000), 2)} calls/sec)"

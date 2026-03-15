@@ -74,7 +74,7 @@ end
 
 # Create test session
 session_id = "bench_session_#{:rand.uniform(1_000_000)}"
-{:ok, _pid} = Phoenix.SessionProcess.start(session_id, BenchSession)
+{:ok, _pid} = Phoenix.SessionProcess.start_session(session_id, module: BenchSession)
 
 IO.puts("Session started: #{session_id}\n")
 
@@ -115,15 +115,11 @@ Enum.each([100, 500, 1000], fn count ->
   {time, results} =
     :timer.tc(fn ->
       Enum.map(1..count, fn _ ->
-        Phoenix.SessionProcess.dispatch_async(session_id, "bench.increment", nil, async: true)
+        Phoenix.SessionProcess.dispatch_async(session_id, "bench.async_increment")
       end)
     end)
 
-  success_count =
-    Enum.count(results, fn
-      {:ok, _cancel_fn} -> true
-      _ -> false
-    end)
+  success_count = Enum.count(results, &(&1 == :ok))
 
   rate = Float.round(success_count / (time / 1_000_000), 2)
   avg_time = Float.round(time / count / 1000, 3)
