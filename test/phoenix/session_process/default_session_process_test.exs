@@ -9,7 +9,8 @@ defmodule Phoenix.SessionProcess.DefaultSessionProcessTest do
   end
 
   test "starts with empty state" do
-    assert %{} = :sys.get_state(:test_session)
+    state = :sys.get_state(:test_session)
+    assert %{} = state.app_state
   end
 
   test "handles :ping call" do
