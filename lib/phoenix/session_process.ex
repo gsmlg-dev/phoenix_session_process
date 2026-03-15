@@ -1993,13 +1993,17 @@ defmodule Phoenix.SessionProcess do
 
       defp notify_all_subscriptions(new_state, subscriptions) do
         Enum.map(subscriptions, fn sub ->
-          new_value = sub.selector.(new_state)
+          try do
+            new_value = sub.selector.(new_state)
 
-          if new_value != sub.last_value do
-            send(sub.pid, {sub.event_name, new_value})
-            %{sub | last_value: new_value}
-          else
-            sub
+            if new_value != sub.last_value do
+              send(sub.pid, {sub.event_name, new_value})
+              %{sub | last_value: new_value}
+            else
+              sub
+            end
+          rescue
+            _ -> sub
           end
         end)
       end
