@@ -660,8 +660,8 @@ defmodule Phoenix.SessionProcess do
       nil ->
         {:error, {:session_not_found, session_id}}
 
-      _pid ->
-        cast(session_id, {:dispatch_action, action})
+      pid ->
+        GenServer.cast(pid, {:dispatch_action, action})
         :ok
     end
   end
