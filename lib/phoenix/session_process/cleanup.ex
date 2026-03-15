@@ -121,15 +121,17 @@ defmodule Phoenix.SessionProcess.Cleanup do
   end
 
   @impl true
-  def handle_call({:store_timer, session_id, timer_ref}, _from, state) do
+  def handle_call({:schedule_timer, session_id, ttl}, _from, state) do
     # Cancel old timer if exists
     case Map.get(state.timers, session_id) do
       nil -> :ok
       old_ref -> Process.cancel_timer(old_ref)
     end
 
+    # Create timer and store atomically inside GenServer
+    timer_ref = Process.send_after(self(), {:cleanup_session, session_id}, ttl)
     new_timers = Map.put(state.timers, session_id, timer_ref)
-    {:reply, :ok, %{state | timers: new_timers}}
+    {:reply, timer_ref, %{state | timers: new_timers}}
   end
 
   @impl true
@@ -180,7 +182,9 @@ defmodule Phoenix.SessionProcess.Cleanup do
     duration = System.monotonic_time() - start_time
 
     if expired_count > 0 do
-      Logger.info("Cleanup: Removed #{expired_count} expired sessions in #{duration}µs")
+      Logger.info(
+        "Cleanup: Removed #{expired_count} expired sessions in #{System.convert_time_unit(duration, :native, :microsecond)}µs"
+      )
     end
 
     :ok
@@ -193,12 +197,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
   @spec schedule_session_cleanup(binary()) :: reference()
   def schedule_session_cleanup(session_id) do
     ttl = Config.session_ttl()
-    timer_ref = Process.send_after(__MODULE__, {:cleanup_session, session_id}, ttl)
-    GenServer.call(__MODULE__, {:store_timer, session_id, timer_ref})
-
-    # Record initial activity
+    timer_ref = GenServer.call(__MODULE__, {:schedule_timer, session_id, ttl})
     ActivityTracker.touch(session_id)
-
     timer_ref
   end
 

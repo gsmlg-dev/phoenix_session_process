@@ -342,11 +342,15 @@ defmodule Phoenix.SessionProcess do
 
       # Session TTL is reset to full duration
   """
-  @spec touch(binary()) :: :ok | {:error, :not_found}
+  @spec touch(binary()) :: :ok | {:error, :not_found | {:cleanup_unavailable, binary()}}
   def touch(session_id) do
     if started?(session_id) do
-      Cleanup.refresh_session(session_id)
-      :ok
+      try do
+        Cleanup.refresh_session(session_id)
+        :ok
+      catch
+        :exit, _ -> {:error, {:cleanup_unavailable, session_id}}
+      end
     else
       {:error, :not_found}
     end
@@ -367,6 +371,22 @@ defmodule Phoenix.SessionProcess do
   - Response from the session process's `handle_call/3` callback
   - `{:error, {:session_not_found, id}}` - Session does not exist
   - `{:error, {:timeout, timeout}}` - Request timed out
+
+  ## Return Value Conventions
+
+  The return value is whatever the session process's `handle_call/3` callback
+  replies with. The built-in handlers injected by `use Phoenix.SessionProcess, :process`
+  wrap their replies in `{:ok, result}` tuples:
+
+  - `:get_state` — returns `{:ok, state}`
+  - `{:select_state, selector}` — returns `{:ok, selected_value}`
+  - `{:subscribe_with_selector, selector, event, pid}` — returns `{:ok, subscription_id}`
+  - `{:unsubscribe, subscription_id}` — returns `{:ok, :unsubscribed}`
+
+  Custom `handle_call/3` implementations in your session process module should
+  follow this `{:ok, result}` convention for consistency, especially if the
+  results will be consumed through higher-level helpers like `get_state/2` or
+  `select_state/2`.
 
   ## Examples
 
@@ -416,6 +436,10 @@ defmodule Phoenix.SessionProcess do
   """
   @spec list_session :: [{binary(), pid()}]
   def list_session do
+    # Filter to only session_id-keyed entries (binary strings).
+    # Pid-keyed entries (for module tracking) are excluded by the is_binary guard.
+    # This relies on session IDs always being binary strings, which is enforced
+    # by valid_session_id?/1 in Config.
     Registry.select(SessionRegistry, [
       {{:"$1", :"$2", :_}, [{:is_binary, :"$1"}], [{{:"$1", :"$2"}}]}
     ])
@@ -660,8 +684,8 @@ defmodule Phoenix.SessionProcess do
       nil ->
         {:error, {:session_not_found, session_id}}
 
-      _pid ->
-        cast(session_id, {:dispatch_action, action})
+      pid ->
+        GenServer.cast(pid, {:dispatch_action, action})
         :ok
     end
   end
@@ -1266,17 +1290,20 @@ defmodule Phoenix.SessionProcess do
       end
 
       def get_session_id do
-        current_pid = self()
-
-        case Registry.select(unquote(SessionRegistry), [
-               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
-             ])
-             |> Enum.at(0) do
-          {session_id, _pid} ->
-            session_id
-
+        case Process.get(:session_id) do
           nil ->
-            raise "Session process not yet registered or registration failed"
+            # Fallback to registry lookup
+            session_id = lookup_own_session_id()
+
+            if session_id do
+              Process.put(:session_id, session_id)
+              session_id
+            else
+              raise "Session process not yet registered or registration failed"
+            end
+
+          session_id ->
+            session_id
         end
       end
 
@@ -1335,7 +1362,23 @@ defmodule Phoenix.SessionProcess do
           _async_cancel_fns: %{}
         }
 
+        # Cache session_id in process dictionary for O(1) lookup
+        session_id = lookup_own_session_id()
+        if session_id, do: Process.put(:session_id, session_id)
+
         {:ok, state}
+      end
+
+      defp lookup_own_session_id do
+        current_pid = self()
+
+        case Registry.select(unquote(SessionRegistry), [
+               {{:"$1", :"$2", :_}, [{:==, :"$2", current_pid}], [{{:"$1", :"$2"}}]}
+             ])
+             |> Enum.at(0) do
+          {session_id, _pid} -> session_id
+          nil -> nil
+        end
       end
 
       @doc """
@@ -1411,20 +1454,6 @@ defmodule Phoenix.SessionProcess do
       # ========================================================================
 
       @impl true
-      def handle_call({:dispatch_action, action}, _from, state) do
-        new_state = dispatch_with_reducers(action, state)
-
-        # Add action to history
-        new_state_with_history = %{
-          new_state
-          | _redux_history:
-              add_to_history(action, new_state._redux_history, new_state._redux_max_history)
-        }
-
-        {:reply, {:ok, new_state_with_history.app_state}, new_state_with_history}
-      end
-
-      @impl true
       def handle_cast({:dispatch_action, action}, state) do
         # Check if action has been cancelled
         cancel_ref = get_in(action.meta, [:cancel_ref])
@@ -1436,6 +1465,13 @@ defmodule Phoenix.SessionProcess do
         else
           # Process action normally
           new_state = dispatch_with_reducers(action, state)
+
+          new_state = %{
+            new_state
+            | _redux_history:
+                add_to_history(action, new_state._redux_history, new_state._redux_max_history)
+          }
+
           {:noreply, new_state}
         end
       end
@@ -1822,14 +1858,8 @@ defmodule Phoenix.SessionProcess do
       end
 
       defp async_action?(%Action{} = action) do
-        # Check if action has async metadata flag
         Action.async?(action)
       end
-
-      defp async_action?(%{type: type}) when is_binary(type),
-        do: String.ends_with?(type, "_async")
-
-      defp async_action?(_), do: false
 
       # Helper function for async dispatch callback
       # Accepts: dispatch(type, payload \\ nil, meta \\ [])
@@ -1983,13 +2013,17 @@ defmodule Phoenix.SessionProcess do
 
       defp notify_all_subscriptions(new_state, subscriptions) do
         Enum.map(subscriptions, fn sub ->
-          new_value = sub.selector.(new_state)
+          try do
+            new_value = sub.selector.(new_state)
 
-          if new_value != sub.last_value do
-            send(sub.pid, {sub.event_name, new_value})
-            %{sub | last_value: new_value}
-          else
-            sub
+            if new_value != sub.last_value do
+              send(sub.pid, {sub.event_name, new_value})
+              %{sub | last_value: new_value}
+            else
+              sub
+            end
+          rescue
+            _ -> sub
           end
         end)
       end
