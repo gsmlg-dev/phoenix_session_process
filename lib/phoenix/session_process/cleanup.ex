@@ -93,31 +93,37 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   @impl true
   def handle_info(:cleanup, state) do
-    cleanup_expired_sessions()
+    new_state =
+      cleanup_expired_sessions()
+      |> Enum.reduce(state, &cancel_timer/2)
+
     schedule_cleanup()
-    {:noreply, state}
+    {:noreply, new_state}
   end
 
   @impl true
   def handle_info({:cleanup_session, session_id}, state) do
-    # Check if session is actually expired (might have been refreshed)
-    if ActivityTracker.expired?(session_id) and
-         ProcessSupervisor.session_process_started?(session_id) do
-      session_pid = ProcessSupervisor.session_process_pid(session_id)
+    cond do
+      not ProcessSupervisor.session_process_started?(session_id) ->
+        ActivityTracker.remove(session_id)
 
-      Telemetry.emit_auto_cleanup_event(
-        session_id,
-        Helpers.get_session_module(session_pid),
-        session_pid
-      )
+      ActivityTracker.expired?(session_id) ->
+        session_pid = ProcessSupervisor.session_process_pid(session_id)
 
-      Phoenix.SessionProcess.terminate(session_id)
-      ActivityTracker.remove(session_id)
+        Telemetry.emit_auto_cleanup_event(
+          session_id,
+          Helpers.get_session_module(session_pid),
+          session_pid
+        )
+
+        Phoenix.SessionProcess.terminate(session_id)
+        ActivityTracker.remove(session_id)
+
+      true ->
+        :ok
     end
 
-    # Remove timer reference
-    new_state = %{state | timers: Map.delete(state.timers, session_id)}
-    {:noreply, new_state}
+    {:noreply, cancel_timer(session_id, state)}
   end
 
   @impl true
@@ -136,14 +142,18 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   @impl true
   def handle_call({:cancel_timer, session_id}, _from, state) do
+    ActivityTracker.remove(session_id)
+    {:reply, :ok, cancel_timer(session_id, state)}
+  end
+
+  defp cancel_timer(session_id, state) do
     case Map.pop(state.timers, session_id) do
       {nil, _} ->
-        {:reply, :ok, state}
+        state
 
       {timer_ref, new_timers} ->
         Process.cancel_timer(timer_ref)
-        ActivityTracker.remove(session_id)
-        {:reply, :ok, %{state | timers: new_timers}}
+        %{state | timers: new_timers}
     end
   end
 
@@ -158,7 +168,7 @@ defmodule Phoenix.SessionProcess.Cleanup do
     # Check all active sessions for expiration
     all_sessions = Phoenix.SessionProcess.list_session()
 
-    expired_count =
+    expired_sessions =
       all_sessions
       |> Enum.filter(fn {session_id, _pid} ->
         ActivityTracker.expired?(session_id, ttl: ttl)
@@ -177,8 +187,8 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
         session_id
       end)
-      |> length()
 
+    expired_count = length(expired_sessions)
     duration = System.monotonic_time() - start_time
 
     if expired_count > 0 do
@@ -187,7 +197,7 @@ defmodule Phoenix.SessionProcess.Cleanup do
       )
     end
 
-    :ok
+    expired_sessions
   end
 
   @doc """

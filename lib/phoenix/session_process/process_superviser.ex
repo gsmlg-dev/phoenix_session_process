@@ -252,6 +252,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
   - Emits telemetry event for session termination
   - Removes process from registry
+  - Cancels scheduled cleanup and removes activity tracking
   - Logs the termination operation
   """
   @spec terminate_session(binary()) :: :ok | {:error, :not_found}
@@ -270,6 +271,7 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
 
         case result do
           :ok ->
+            cleanup_session_tracking(session_id)
             Telemetry.emit_session_stop(session_id, module, pid, duration: duration)
             :ok
 
@@ -277,6 +279,15 @@ defmodule Phoenix.SessionProcess.ProcessSupervisor do
             Telemetry.emit_session_cleanup_error(session_id, module, error, duration: duration)
             error
         end
+    end
+  end
+
+  defp cleanup_session_tracking(session_id) do
+    # Cleanup owns its timer state and must not call itself synchronously.
+    if self() == Process.whereis(Cleanup) do
+      ActivityTracker.remove(session_id)
+    else
+      Cleanup.cancel_session_cleanup(session_id)
     end
   end
 
