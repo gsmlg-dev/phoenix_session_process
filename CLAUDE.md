@@ -15,7 +15,7 @@ This is Phoenix.SessionProcess, an Elixir library that enables **reusable, compo
 - **Session Isolation**: Each user gets their own process with isolated state
 - **Zero Dependencies**: Pure OTP/Elixir solution - no Redis, no database
 
-**Current Version**: 1.0.0-rc.2
+**Current Version**: 1.0.1
 **Repository**: https://github.com/gsmlg-dev/phoenix_session_process
 **Hex Package**: https://hex.pm/packages/phoenix_session_process
 
@@ -32,7 +32,7 @@ This is Phoenix.SessionProcess, an Elixir library that enables **reusable, compo
 - `mix format --check-formatted` - Check formatting without modifying files (CI requirement)
 - `mix credo --strict` - Run static code analysis with strict mode (CI requirement)
 - `mix dialyzer` - Run type checking (first run builds PLT cache)
-- `mix dialyzer --halt-exit-status` - Run type checking and exit with error code on issues (CI requirement)
+- `mix dialyzer` - Run type checking and exit with error code on issues (CI requirement)
 - `mix lint` - Run both Credo and Dialyzer (defined in mix.exs aliases)
 - `mix docs` - Generate documentation
 - `mix hex.publish` - Publish to Hex.pm (requires authentication)
@@ -42,7 +42,7 @@ Before committing, ensure code passes all CI checks:
 1. Compiles without warnings: `mix compile --warnings-as-errors`
 2. Properly formatted: `mix format --check-formatted`
 3. Passes Credo: `mix credo --strict`
-4. Passes Dialyzer: `mix dialyzer --halt-exit-status`
+4. Passes Dialyzer: `mix dialyzer`
 
 ### Testing
 The test suite uses ExUnit. Tests are located in the `test/` directory. The test helper (test/test_helper.exs:3) automatically starts the supervisor and configures the default TestProcess module.

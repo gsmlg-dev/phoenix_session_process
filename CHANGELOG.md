@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-12
+
+### Fixed
+
+- Explicit session termination now cancels the cleanup timer and removes activity tracking.
+- Scheduled cleanup removes stale activity after a session process has crashed.
+- TTL expiration avoids synchronous calls from Cleanup to itself and cancels timers during periodic cleanup.
+- Cleanup cancellation removes stale activity even when the timer is already absent.
+
+### Changed
+
+- Updated all active dependencies within their existing version constraints, including Plug 1.20.3.
+- Removed unused dependency lock entries.
+
 ## [1.0.0] - 2025-10-31
 
 ### Breaking Changes
@@ -290,6 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate limiting and session limit enforcement
 - Telemetry integration for monitoring
 
+[1.0.1]: https://github.com/gsmlg-dev/phoenix_session_process/compare/1.0.0...1.0.1
 [0.6.0]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.4.0...v0.6.0
 [0.4.0]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/gsmlg-dev/phoenix_session_process/compare/v0.3.0...v0.3.1

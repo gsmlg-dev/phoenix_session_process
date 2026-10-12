@@ -1,7 +1,7 @@
 defmodule Phoenix.SessionProcess.MixProject do
   use Mix.Project
 
-  @version "1.0.0-rc.2"
+  @version "1.0.1"
   @source_url "https://github.com/gsmlg-dev/phoenix_session_process"
 
   def project do
@@ -73,7 +73,7 @@ defmodule Phoenix.SessionProcess.MixProject do
   defp docs do
     [
       name: "Phoenix.SessionProcess",
-      source_ref: "v#{@version}",
+      source_ref: @version,
       main: "readme",
       source_url: @source_url,
       homepage_url: @source_url,
