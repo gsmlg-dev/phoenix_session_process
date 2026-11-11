@@ -492,6 +492,42 @@ config :phoenix_session_process,
   max_sessions: 20_000  # Maximum concurrent sessions
 ```
 
+#### Throttling and Debouncing Actions
+Reducers can throttle or debounce individual action types with module attributes:
+
+```elixir
+defmodule MyApp.SearchReducer do
+  use Phoenix.SessionProcess, :reducer
+  alias Phoenix.SessionProcess.Action
+
+  @name :search
+  @action_prefix "search"
+
+  @impl true
+  def init_state, do: %{query: nil, fetches: 0}
+
+  # Execute immediately, then drop repeats for 3 seconds
+  @throttle {"fetch", "3000ms"}
+  # Run only after 500ms with no new "set_query" dispatch (last payload wins)
+  @debounce {"set_query", "500ms"}
+
+  @impl true
+  def handle_action(action, state) do
+    case action do
+      %Action{type: "fetch"} -> %{state | fetches: state.fetches + 1}
+      %Action{type: "set_query", payload: q} -> %{state | query: q}
+      _ -> state
+    end
+  end
+end
+
+SessionProcess.dispatch(session_id, "search.set_query", "elixir")
+```
+
+The pattern is matched exactly against the action type after the reducer's
+`@action_prefix` is stripped (`"fetch"`, not `"search.fetch"`). Durations accept
+`"500ms"`, `"1s"`, `"5m"`, and `"1h"`.
+
 #### Custom Session State
 Store complex data structures and implement custom logic:
 
@@ -591,8 +627,18 @@ The library emits comprehensive telemetry events for monitoring and debugging:
 - `[:phoenix, :session_process, :communication_error]` - When communication fails
 
 ### Cleanup Events
-- `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
+- `[:phoenix, :session_process, :auto_cleanup]` - When a session is expired by TTL cleanup
 - `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
+
+### Process Management Events
+- `[:phoenix, :session_process, :session_start]` - When a session process starts
+- `[:phoenix, :session_process, :session_end]` - When a session process ends
+- `[:phoenix, :session_process, :worker_start]` - When a supervisor child starts
+- `[:phoenix, :session_process, :worker_terminate]` - When a supervisor child terminates
+
+### Rate Limiting Events
+- `[:phoenix, :session_process, :rate_limit_check]` - On each session-creation rate limit check
+- `[:phoenix, :session_process, :rate_limit_exceeded]` - When the session-creation rate limit is hit
 
 
 ### Example Telemetry Setup
@@ -621,12 +667,15 @@ The library provides detailed error responses with the `Phoenix.SessionProcess.E
 
 ### Error Types
 - `{:error, {:invalid_session_id, session_id}}` - Invalid session ID format
+- `{:error, {:already_started, pid}}` - `start_session` for an existing session
 - `{:error, {:session_limit_reached, max_sessions}}` - Maximum sessions exceeded
+- `{:error, {:rate_limit_exceeded, rate_limit}}` - Session-creation rate limit hit
 - `{:error, {:session_not_found, session_id}}` - Session doesn't exist
 - `{:error, {:process_not_found, session_id}}` - Process not found
 - `{:error, {:timeout, timeout}}` - Operation timed out
 - `{:error, {:call_failed, {module, function, args, reason}}}` - Call operation failed
 - `{:error, {:cast_failed, {module, function, args, reason}}}` - Cast operation failed
+- `{:error, {:cleanup_unavailable, session_id}}` - `touch/1` when the Cleanup process is down
 
 ### Error Handling Examples
 

@@ -184,6 +184,8 @@ The library is organized into several logical groups:
 - `Phoenix.SessionProcess.Supervisor` - Top-level supervisor (Note: filename is `superviser.ex`)
 - `Phoenix.SessionProcess.ProcessSupervisor` - Dynamic supervisor for sessions (Note: filename is `process_superviser.ex`)
 - `Phoenix.SessionProcess.Cleanup` - TTL-based cleanup
+- `Phoenix.SessionProcess.ActivityTracker` - ETS table of last-activity timestamps; Cleanup uses it to expire only idle sessions
+- `Phoenix.SessionProcess.RateLimiter` - Session-creation rate limiting (`rate_limit` sessions per minute)
 - `Phoenix.SessionProcess.DefaultSessionProcess` - Default session implementation
 
 **Behaviours** (define contracts for user modules):
@@ -193,6 +195,7 @@ The library is organized into several logical groups:
 **State Management**:
 - `Phoenix.SessionProcess.Action` - Internal action structure for dispatching
 - `Phoenix.SessionProcess.ReducerCompiler` - Compile-time reducer validation and code generation
+- `Phoenix.SessionProcess.ActionRateLimiter` - Runtime throttle/debounce for reducer actions (`@throttle` / `@debounce`)
 
 **Configuration & Error Handling**:
 - `Phoenix.SessionProcess.Config` - Configuration management
@@ -200,7 +203,7 @@ The library is organized into several logical groups:
 
 **Observability**:
 - `Phoenix.SessionProcess.Telemetry` - Telemetry event emission
-- `Phoenix.SessionProcess.TelemetryLogger` - Logging integration
+- `Phoenix.SessionProcess.Logger` - Logging integration (telemetry handlers)
 - `Phoenix.SessionProcess.Helpers` - General utilities
 
 ### Core Components
@@ -217,7 +220,10 @@ The library is organized into several logical groups:
    - `terminate/1` - Stop session
    - `started?/1` - Check if session exists
    - `touch/1` - Reset session TTL (extend session lifetime)
+   - `find_session/1` - Look up a session pid: `{:ok, pid} | {:error, :not_found}`
    - `list_session/0` - List all sessions
+   - `list_sessions_by_module/1` - List session IDs running a given module
+   - `session_info/0` - Session count and modules in use: `%{count: integer(), modules: [module()]}`
    - `session_stats/0` - Get memory and performance statistics
 
    **Redux Store API (v1.0.0)** - SessionProcess IS the Redux store:
@@ -348,7 +354,9 @@ The library is organized into several logical groups:
    - Compile-time validation and code generation for reducers
    - Validates `@name` is an atom
    - Validates `@action_prefix` is binary, nil, or ""
-   - Generates `get_name/0`, `get_action_prefix/0`, and default callbacks
+   - Collects `@throttle` / `@debounce` attributes (captured via `@on_definition`)
+   - Generates metadata functions: `__reducer_name__/0`, `__reducer_action_prefix__/0`,
+     `__reducer_throttles__/0`, `__reducer_debounces__/0`, `__reducer_module__/0`
 
 6. **Phoenix.SessionProcess.Supervisor** (lib/phoenix/session_process/superviser.ex:1)
    - Top-level supervisor that manages the Registry, ProcessSupervisor, and Cleanup
@@ -780,17 +788,32 @@ The library emits comprehensive telemetry events for monitoring:
 - `[:phoenix, :session_process, :call]` - Call operations
 - `[:phoenix, :session_process, :cast]` - Cast operations
 - `[:phoenix, :session_process, :communication_error]` - Communication errors
-- `[:phoenix, :session_process, :cleanup]` - Session cleanup
+- `[:phoenix, :session_process, :auto_cleanup]` - Session expired by TTL cleanup
 - `[:phoenix, :session_process, :cleanup_error]` - Cleanup errors
+- `[:phoenix, :session_process, :session_start]` / `:session_end` - Session process lifecycle (ProcessSupervisor)
+- `[:phoenix, :session_process, :worker_start]` / `:worker_terminate` - Supervisor child start/terminate
+- `[:phoenix, :session_process, :rate_limit_check]` / `:rate_limit_exceeded` - Session-creation rate limiting
 
 Events include metadata (session_id, module, pid) and measurements (duration in native time units).
+
+**Not currently emitted**: `Phoenix.SessionProcess.Telemetry` defines emitters for
+`[:phoenix, :session_process, :cleanup]` and the `[:phoenix, :session_process, :redux, ...]`
+events (dispatch, subscribe, unsubscribe, notification, selector_cache_hit/miss), but the
+library never calls them. Do not rely on these events without first wiring them up.
 
 ### Error Types
 Common error responses:
 - `{:error, {:invalid_session_id, session_id}}` - Invalid session ID format
+- `{:error, {:already_started, pid}}` - `start_session` for an existing session
 - `{:error, {:session_limit_reached, max_sessions}}` - Maximum sessions exceeded
+- `{:error, {:rate_limit_exceeded, rate_limit}}` - Session-creation rate limit hit
 - `{:error, {:session_not_found, session_id}}` - Session doesn't exist
+- `{:error, {:process_not_found, session_id}}` - Process not found
 - `{:error, {:timeout, timeout}}` - Operation timed out
+- `{:error, {:call_failed, {module, function, args, reason}}}` - Call operation failed
+- `{:error, {:cast_failed, {module, function, args, reason}}}` - Cast operation failed
+- `{:error, {:cleanup_unavailable, session_id}}` - `touch/1` when the Cleanup process is down
+- `{:error, :not_found}` - `find_session/1` / `touch/1` for an unknown session
 
 Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.
 
@@ -876,6 +899,33 @@ Use `Phoenix.SessionProcess.Error.message/1` for human-readable error messages.
    config :phoenix_session_process,
      unmatched_action_handler: :warn  # :log | :warn | :silent | custom function
    ```
+
+8. **Throttle and Debounce Reducer Actions**:
+   ```elixir
+   defmodule MyApp.UserReducer do
+     use Phoenix.SessionProcess, :reducer
+
+     @name :user
+     @action_prefix "user"
+
+     # Execute immediately, then drop repeats for 3 seconds
+     @throttle {"fetch-list", "3000ms"}
+     # Run only after 500ms with no new "update-query" dispatch (last payload wins)
+     @debounce {"update-query", "500ms"}
+
+     @impl true
+     def handle_action(action, state), do: ...
+   end
+
+   SessionProcess.dispatch(session_id, "user.fetch-list")
+   ```
+   - Place the attribute before a `def`; it is captured by `@on_definition`.
+   - The pattern is compared by exact equality with the action type **after** the
+     reducer's `@action_prefix` is stripped, so write `"fetch-list"`, not `"user.fetch-list"`.
+   - Durations: `"500ms"`, `"1s"`, `"5m"`, `"1h"` (see `ActionRateLimiter.parse_duration/1`).
+   - Implementation: `ActionRateLimiter`, called from `apply_combined_reducer` in
+     lib/phoenix/session_process.ex; tests in test/phoenix/session_process/reducer_integration_test.exs
+     and action_rate_limiter_test.exs.
 
 ## Agent Note
 

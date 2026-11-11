@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   If you worked around this by writing full-type patterns such as `@throttle {"user.fetch", "1s"}`,
   change them to the stripped form (`"fetch"`).
 
+### Documentation
+
+- Telemetry docs now list only events the library emits. `:cleanup` and the `:redux` events are
+  defined but not currently emitted; `:session_expired` was documented but never existed.
+- Documented throttle/debounce in the README and added missing error types.
+
 ## [1.0.1] - 2026-10-12
 
 ### Fixed

@@ -27,10 +27,17 @@ defmodule Phoenix.SessionProcess.Telemetry do
 
   ### Cleanup
   - `[:phoenix, :session_process, :auto_cleanup]` - When a session is auto-cleaned up
-  - `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
   - `[:phoenix, :session_process, :cleanup_error]` - When cleanup fails
 
-  ### Redux State Management
+  ### Rate Limiting
+  - `[:phoenix, :session_process, :rate_limit_check]` - On each session-creation rate limit check
+  - `[:phoenix, :session_process, :rate_limit_exceeded]` - When the rate limit is hit
+
+  ### Defined but not currently emitted
+  The emitter functions below exist in this module, but the library does not call
+  them yet, so handlers attached to these events will not fire:
+
+  - `[:phoenix, :session_process, :cleanup]` - When a session is cleaned up
   - `[:phoenix, :session_process, :redux, :dispatch]` - When a Redux action is dispatched
   - `[:phoenix, :session_process, :redux, :subscribe]` - When a subscription is created
   - `[:phoenix, :session_process, :redux, :unsubscribe]` - When a subscription is removed

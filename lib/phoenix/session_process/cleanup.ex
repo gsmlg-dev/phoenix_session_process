@@ -47,11 +47,10 @@ defmodule Phoenix.SessionProcess.Cleanup do
 
   ## Telemetry
 
-  The cleanup process emits several telemetry events:
+  Cleanup-related telemetry events:
 
-  - `[:phoenix, :session_process, :cleanup]` - Cleanup cycle completed
-  - `[:phoenix, :session_process, :cleanup_error]` - Cleanup operation failed
-  - `[:phoenix, :session_process, :session_expired]` - Individual session expired
+  - `[:phoenix, :session_process, :auto_cleanup]` - Individual session expired (emitted by this process)
+  - `[:phoenix, :session_process, :cleanup_error]` - Session termination failed (emitted by `ProcessSupervisor`)
 
   ## Monitoring
 
