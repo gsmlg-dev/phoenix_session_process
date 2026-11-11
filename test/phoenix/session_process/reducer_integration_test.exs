@@ -316,6 +316,16 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       state3 = SessionProcess.get_state(session_id)
       assert state3.users.fetch_count == 2
     end
+
+    test "throttles prefixed dispatches using the prefix-stripped pattern", %{
+      session_id: session_id
+    } do
+      SessionProcess.dispatch(session_id, "user.fetch-users")
+      SessionProcess.dispatch(session_id, "user.fetch-users")
+      SessionProcess.dispatch(session_id, "user.fetch-users")
+
+      assert SessionProcess.get_state(session_id).users.fetch_count == 1
+    end
   end
 
   describe "debounce functionality" do
@@ -337,6 +347,19 @@ defmodule Phoenix.SessionProcess.ReducerIntegrationTest do
       # Now the last value should be set
       state2 = SessionProcess.get_state(session_id)
       assert state2.users.search_query == "abc"
+    end
+
+    test "debounces prefixed dispatches and applies the last action", %{
+      session_id: session_id
+    } do
+      SessionProcess.dispatch(session_id, "user.search-users", "a")
+      SessionProcess.dispatch(session_id, "user.search-users", "abc")
+
+      assert SessionProcess.get_state(session_id).users.search_query == nil
+
+      Process.sleep(100)
+
+      assert SessionProcess.get_state(session_id).users.search_query == "abc"
     end
   end
 

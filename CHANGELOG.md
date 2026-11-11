@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `@throttle` and `@debounce` now work for prefixed dispatches (e.g. `"user.fetch"` on a reducer with
+  `@action_prefix "user"`). Patterns are matched against the prefix-stripped action type, and debounced
+  actions reach `handle_action/2` with the stripped type. Previously throttle/debounce did not apply to
+  prefixed dispatches, and debounced actions with a full-type pattern were never applied.
+  If you worked around this by writing full-type patterns such as `@throttle {"user.fetch", "1s"}`,
+  change them to the stripped form (`"fetch"`).
+
 ## [1.0.1] - 2026-10-12
 
 ### Fixed

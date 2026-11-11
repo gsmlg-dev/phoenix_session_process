@@ -1797,16 +1797,18 @@ defmodule Phoenix.SessionProcess do
         skip_strip = not is_nil(Action.target_reducers(action))
         local_action = strip_action_prefix(action, reducer_prefix, skip_strip)
 
+        # Throttle/debounce patterns match the prefix-stripped type, and the
+        # debounced message carries local_action so handle_action sees that type too
         # Check throttle first
-        if ActionRateLimiter.should_throttle?(module, action, internal_state) do
+        if ActionRateLimiter.should_throttle?(module, local_action, internal_state) do
           # Skip action due to throttle
           {app_state, internal_state}
         else
           # Check debounce
-          if ActionRateLimiter.should_debounce?(module, action) do
+          if ActionRateLimiter.should_debounce?(module, local_action) do
             # Schedule debounced action
             new_internal_state =
-              ActionRateLimiter.schedule_debounce(module, action, self(), internal_state)
+              ActionRateLimiter.schedule_debounce(module, local_action, self(), internal_state)
 
             # Return unchanged app_state but updated internal_state
             {app_state, new_internal_state}
@@ -1850,7 +1852,11 @@ defmodule Phoenix.SessionProcess do
 
             # Record throttle if needed
             new_internal_state =
-              ActionRateLimiter.record_throttle(module, action, new_internal_state_with_cancel)
+              ActionRateLimiter.record_throttle(
+                module,
+                local_action,
+                new_internal_state_with_cancel
+              )
 
             {new_app_state, new_internal_state}
           end
