@@ -1330,7 +1330,7 @@ defmodule Phoenix.SessionProcess do
           end
 
         # Build reducer map from combined_reducers (validates entries)
-        redux_reducers = build_combined_reducers(combined)
+        redux_reducers = Phoenix.SessionProcess.__build_combined_reducers__(combined)
 
         # Initialize state slices from each reducer's init_state
         # Use the validated redux_reducers map
@@ -1616,138 +1616,6 @@ defmodule Phoenix.SessionProcess do
       # ========================================================================
       # Private Helpers
       # ========================================================================
-
-      defp build_combined_reducers(combined) when is_list(combined) do
-        Enum.reduce(combined, %{}, fn
-          # Format 1: Module - use module's @name and @action_prefix
-          module, acc when is_atom(module) ->
-            validate_reducer_module!(module)
-            name = module.__reducer_name__()
-            action_prefix = module.__reducer_action_prefix__()
-
-            if Map.has_key?(acc, name) do
-              raise ArgumentError, """
-              Duplicate reducer name: #{inspect(name)}
-
-              Reducer names must be unique in combined_reducers/0.
-              Found duplicate for name #{inspect(name)}.
-
-              Check your combined_reducers/0 list and ensure each reducer has a unique @name.
-              """
-            end
-
-            Map.put(acc, name, {:combined, module, name, action_prefix})
-
-          # Format 2: {name, Module} - use name, action_prefix = stringified name
-          {name, module}, acc when is_atom(name) and is_atom(module) ->
-            validate_reducer_module!(module)
-            action_prefix = to_string(name)
-
-            if Map.has_key?(acc, name) do
-              raise ArgumentError, """
-              Duplicate reducer name: #{inspect(name)}
-
-              Reducer names must be unique in combined_reducers/0.
-              Found duplicate for name #{inspect(name)}.
-
-              Check your combined_reducers/0 list and ensure each name is unique.
-              """
-            end
-
-            Map.put(acc, name, {:combined, module, name, action_prefix})
-
-          # Format 3: {name, Module, action_prefix} - explicit name and action_prefix
-          {name, module, action_prefix}, acc
-          when is_atom(name) and is_atom(module) and
-                 (is_binary(action_prefix) or is_nil(action_prefix)) ->
-            validate_reducer_module!(module)
-
-            if Map.has_key?(acc, name) do
-              raise ArgumentError, """
-              Duplicate reducer name: #{inspect(name)}
-
-              Reducer names must be unique in combined_reducers/0.
-              Found duplicate for name #{inspect(name)}.
-
-              Check your combined_reducers/0 list and ensure each name is unique.
-              """
-            end
-
-            Map.put(acc, name, {:combined, module, name, action_prefix})
-
-          # Invalid format - catch-all with helpful error
-          invalid, _acc ->
-            raise ArgumentError, """
-            Invalid combined_reducers entry: #{inspect(invalid)}
-
-            Expected one of:
-              - Module (atom) - uses module's @name and @action_prefix
-              - {name, Module} (2-tuple) - custom name, action_prefix defaults to name
-              - {name, Module, action_prefix} (3-tuple) - custom name and action_prefix (can be nil)
-
-            Example:
-                def combined_reducers do
-                  [
-                    UserReducer,                     # Uses @name and @action_prefix from module
-                    {:cart, CartReducer},            # Name: :cart, action_prefix: "cart"
-                    {:shipping, ShipReducer, "ship"}, # Name: :shipping, action_prefix: "ship"
-                    {:global, GlobalReducer, nil}    # Name: :global, no action_prefix (handles all)
-                  ]
-                end
-
-            Got: #{inspect(invalid)}
-            """
-        end)
-      end
-
-      # Handle old map format for backward compatibility
-      defp build_combined_reducers(combined) when is_map(combined) do
-        Enum.into(combined, %{}, fn {slice_key, module} ->
-          # For maps, use slice_key as both name and action_prefix
-          action_prefix = to_string(slice_key)
-          {slice_key, {:combined, module, slice_key, action_prefix}}
-        end)
-      end
-
-      defp validate_reducer_module!(module) do
-        case Code.ensure_loaded(module) do
-          {:module, _} ->
-            :ok
-
-          {:error, _reason} ->
-            raise ArgumentError, """
-            Could not load reducer module: #{inspect(module)}
-
-            Make sure the module is compiled and available.
-            """
-        end
-
-        unless function_exported?(module, :__reducer_name__, 0) do
-          raise ArgumentError, """
-          Module #{inspect(module)} is not a reducer module.
-
-          Reducer modules must use the :reducer macro and define @name.
-
-          Did you forget to add:
-              use Phoenix.SessionProcess, :reducer
-              @name :reducer_name
-
-          Example:
-              defmodule MyReducer do
-                use Phoenix.SessionProcess, :reducer
-
-                @name :my_reducer
-                @action_prefix "my"  # Optional, defaults to @name (can be nil or "" for catch-all)
-
-                def init_state, do: %{}
-
-                def handle_action(action, state) do
-                  # ...
-                end
-              end
-          """
-        end
-      end
 
       defp init_reducer_slice(slice_key, module, state) do
         slice_initial_state =
@@ -2049,6 +1917,139 @@ defmodule Phoenix.SessionProcess do
                      handle_call: 3,
                      handle_cast: 2,
                      handle_info: 2
+    end
+  end
+
+  @doc false
+  def __build_combined_reducers__(combined) when is_list(combined) do
+    Enum.reduce(combined, %{}, fn
+      # Format 1: Module - use module's @name and @action_prefix
+      module, acc when is_atom(module) ->
+        validate_reducer_module!(module)
+        name = module.__reducer_name__()
+        action_prefix = module.__reducer_action_prefix__()
+
+        if Map.has_key?(acc, name) do
+          raise ArgumentError, """
+          Duplicate reducer name: #{inspect(name)}
+
+          Reducer names must be unique in combined_reducers/0.
+          Found duplicate for name #{inspect(name)}.
+
+          Check your combined_reducers/0 list and ensure each reducer has a unique @name.
+          """
+        end
+
+        Map.put(acc, name, {:combined, module, name, action_prefix})
+
+      # Format 2: {name, Module} - use name, action_prefix = stringified name
+      {name, module}, acc when is_atom(name) and is_atom(module) ->
+        validate_reducer_module!(module)
+        action_prefix = to_string(name)
+
+        if Map.has_key?(acc, name) do
+          raise ArgumentError, """
+          Duplicate reducer name: #{inspect(name)}
+
+          Reducer names must be unique in combined_reducers/0.
+          Found duplicate for name #{inspect(name)}.
+
+          Check your combined_reducers/0 list and ensure each name is unique.
+          """
+        end
+
+        Map.put(acc, name, {:combined, module, name, action_prefix})
+
+      # Format 3: {name, Module, action_prefix} - explicit name and action_prefix
+      {name, module, action_prefix}, acc
+      when is_atom(name) and is_atom(module) and
+             (is_binary(action_prefix) or is_nil(action_prefix)) ->
+        validate_reducer_module!(module)
+
+        if Map.has_key?(acc, name) do
+          raise ArgumentError, """
+          Duplicate reducer name: #{inspect(name)}
+
+          Reducer names must be unique in combined_reducers/0.
+          Found duplicate for name #{inspect(name)}.
+
+          Check your combined_reducers/0 list and ensure each name is unique.
+          """
+        end
+
+        Map.put(acc, name, {:combined, module, name, action_prefix})
+
+      # Invalid format - catch-all with helpful error
+      invalid, _acc ->
+        raise ArgumentError, """
+        Invalid combined_reducers entry: #{inspect(invalid)}
+
+        Expected one of:
+          - Module (atom) - uses module's @name and @action_prefix
+          - {name, Module} (2-tuple) - custom name, action_prefix defaults to name
+          - {name, Module, action_prefix} (3-tuple) - custom name and action_prefix (can be nil)
+
+        Example:
+            def combined_reducers do
+              [
+                UserReducer,                     # Uses @name and @action_prefix from module
+                {:cart, CartReducer},            # Name: :cart, action_prefix: "cart"
+                {:shipping, ShipReducer, "ship"}, # Name: :shipping, action_prefix: "ship"
+                {:global, GlobalReducer, nil}    # Name: :global, no action_prefix (handles all)
+              ]
+            end
+
+        Got: #{inspect(invalid)}
+        """
+    end)
+  end
+
+  # Handle old map format for backward compatibility
+  def __build_combined_reducers__(combined) when is_map(combined) do
+    Enum.into(combined, %{}, fn {slice_key, module} ->
+      # For maps, use slice_key as both name and action_prefix
+      action_prefix = to_string(slice_key)
+      {slice_key, {:combined, module, slice_key, action_prefix}}
+    end)
+  end
+
+  defp validate_reducer_module!(module) do
+    case Code.ensure_loaded(module) do
+      {:module, _} ->
+        :ok
+
+      {:error, _reason} ->
+        raise ArgumentError, """
+        Could not load reducer module: #{inspect(module)}
+
+        Make sure the module is compiled and available.
+        """
+    end
+
+    unless function_exported?(module, :__reducer_name__, 0) do
+      raise ArgumentError, """
+      Module #{inspect(module)} is not a reducer module.
+
+      Reducer modules must use the :reducer macro and define @name.
+
+      Did you forget to add:
+          use Phoenix.SessionProcess, :reducer
+          @name :reducer_name
+
+      Example:
+          defmodule MyReducer do
+            use Phoenix.SessionProcess, :reducer
+
+            @name :my_reducer
+            @action_prefix "my"  # Optional, defaults to @name (can be nil or "" for catch-all)
+
+            def init_state, do: %{}
+
+            def handle_action(action, state) do
+              # ...
+            end
+          end
+      """
     end
   end
 

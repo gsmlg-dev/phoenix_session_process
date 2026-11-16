@@ -8,8 +8,12 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test (Elixir ${{ matrix.elixir }})
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        elixir: ['1.18', '1.20.4']
 
     services:
       mailhog:
@@ -25,7 +29,7 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.18'
+          elixir-version: ${{ matrix.elixir }}
           otp-version: '28'
 
       - uses: oven-sh/setup-bun@v2
@@ -38,9 +42,9 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-elixir-${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            ${{ runner.os }}-elixir-${{ matrix.elixir }}-mix-
 
       - name: Install dependencies
         run: mix deps.get

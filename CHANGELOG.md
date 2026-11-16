@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-11-16
+
+### Fixed
+
+- Session process modules with concrete `combined_reducers/0` return types compile without
+  generated unreachable-clause warnings on Elixir 1.20. Reducer normalization now runs in the
+  library instead of being injected into each consumer, preserving all supported list formats,
+  legacy map behavior, and reducer validation. Fixes #60.
+
+### Testing
+
+- Added compiler regression coverage for default reducers, empty and populated lists, tuple
+  entries, and legacy maps. CI runs the test suite on Elixir 1.18 and 1.20.4.
+
 ## [1.0.2] - 2026-11-13
 
 ### Fixed
